@@ -1,0 +1,23 @@
+.stm-dashboard .stm-filter { margin: 12px 0; display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; }
+.stm-dashboard .stm-filter label { display: flex; flex-direction: column; font-weight: 600; gap: 2px; }
+.stm-dashboard .stm-actions { margin: 8px 0 20px; }
+
+.stm-summary { max-width: 1000px; margin-bottom: 8px; }
+.stm-summary th, .stm-summary td { text-align: right; }
+.stm-summary th:first-child, .stm-summary td.stm-name { text-align: left; }
+
+.stm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; max-width: 1000px; margin: 8px 0 8px; }
+@media (max-width: 900px) { .stm-grid { grid-template-columns: 1fr; } }
+
+.stm-bars { background: #fff; border: 1px solid #dcdcde; border-radius: 8px; padding: 12px 14px; }
+.stm-bar-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.stm-bar-label { width: 150px; font-size: 13px; }
+.stm-bar-track { flex: 1; height: 14px; background: #eef0f2; border-radius: 7px; overflow: hidden; }
+.stm-bar-fill { display: block; height: 100%; border-radius: 7px; }
+.stm-bar-val { width: 56px; text-align: right; font-variant-numeric: tabular-nums; color: #666; }
+
+.stm-scroll { overflow-x: auto; max-width: 100%; }
+.stm-matrix { min-width: 640px; }
+.stm-matrix th, .stm-matrix td { text-align: center; white-space: nowrap; }
+.stm-matrix td.stm-name, .stm-matrix th:first-child { text-align: left; }
+.stm-matrix td.stm-empty { color: #bbb; }
