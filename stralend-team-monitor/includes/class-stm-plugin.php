@@ -49,7 +49,10 @@ class STM_Plugin {
 	}
 
 	public function menus() {
-		$cap = 'manage_options';
+		// Show the menu only to allow-listed users. We translate our own access
+		// check into a capability WordPress can evaluate for the current user:
+		// 'read' (every logged-in user has it) when allowed, else 'do_not_allow'.
+		$cap = STM_Settings::can_access() ? 'read' : 'do_not_allow';
 
 		add_menu_page(
 			__( 'Team Monitor', 'stralend-team-monitor' ),

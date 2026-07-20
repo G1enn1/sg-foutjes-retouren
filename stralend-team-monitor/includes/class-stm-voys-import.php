@@ -29,7 +29,7 @@ class STM_Voys_Import {
 		if ( ! isset( $_POST['stm_import_nonce'] ) ) {
 			return;
 		}
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! STM_Settings::can_access() ) {
 			return;
 		}
 		check_admin_referer( 'stm_import', 'stm_import_nonce' );
@@ -166,8 +166,8 @@ class STM_Voys_Import {
 	}
 
 	public function render_page() {
-		if ( ! current_user_can( 'manage_options' ) ) {
-			return;
+		if ( ! STM_Settings::can_access() ) {
+			wp_die( esc_html__( 'Je hebt geen toegang tot Team Monitor.', 'stralend-team-monitor' ) );
 		}
 		$result = get_transient( 'stm_import_result' );
 		delete_transient( 'stm_import_result' );

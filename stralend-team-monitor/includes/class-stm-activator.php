@@ -17,6 +17,7 @@ class STM_Activator {
 		update_option( 'stm_db_version', STM_DB_VERSION );
 
 		self::seed_defaults();
+		self::grant_default_access();
 
 		if ( ! wp_next_scheduled( self::CRON_HOOK ) ) {
 			// First run tomorrow ~06:30 local, then daily.
@@ -61,6 +62,23 @@ class STM_Activator {
 		}
 		if ( ! get_option( 'stm_webhook_secret' ) ) {
 			update_option( 'stm_webhook_secret', wp_generate_password( 32, false, false ) );
+		}
+	}
+
+	/**
+	 * Grant plugin access to the person installing it (so they are never locked
+	 * out) plus any existing users matching the default access emails.
+	 */
+	private static function grant_default_access() {
+		$current = wp_get_current_user();
+		if ( $current && $current->ID ) {
+			$current->add_cap( STM_Settings::CAP );
+		}
+		foreach ( STM_Settings::DEFAULT_ACCESS_EMAILS as $email ) {
+			$user = get_user_by( 'email', $email );
+			if ( $user ) {
+				$user->add_cap( STM_Settings::CAP );
+			}
 		}
 	}
 

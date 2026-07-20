@@ -61,8 +61,8 @@ class STM_Admin_Dashboard {
 	}
 
 	private function guard( $action ) {
-		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'Onvoldoende rechten.', 'stralend-team-monitor' ) );
+		if ( ! STM_Settings::can_access() ) {
+			wp_die( esc_html__( 'Je hebt geen toegang tot Team Monitor.', 'stralend-team-monitor' ) );
 		}
 		check_admin_referer( $action );
 	}
@@ -109,8 +109,8 @@ class STM_Admin_Dashboard {
 	 * ------------------------------------------------------------------ */
 
 	public function render_page() {
-		if ( ! current_user_can( 'manage_options' ) ) {
-			return;
+		if ( ! STM_Settings::can_access() ) {
+			wp_die( esc_html__( 'Je hebt geen toegang tot Team Monitor.', 'stralend-team-monitor' ) );
 		}
 		$from = isset( $_GET['from'] ) ? sanitize_text_field( wp_unslash( $_GET['from'] ) ) : '';
 		$to   = isset( $_GET['to'] ) ? sanitize_text_field( wp_unslash( $_GET['to'] ) ) : '';

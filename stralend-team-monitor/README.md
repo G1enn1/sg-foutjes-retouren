@@ -49,6 +49,19 @@ Elk gesprek wordt dan realtime opgeslagen. Zorg dat de site via HTTPS bereikbaar
 
 ---
 
+## Toegang — wie ziet het?
+
+De plugin is **niet** zichtbaar voor iedereen: alleen expliciet aangewezen
+gebruikers zien het **Team Monitor**-menu en de cijfers. Bij activatie krijgen
+toegang: de gebruiker die de plugin installeert, plus bestaande accounts met een
+e-mail uit `DEFAULT_ACCESS_EMAILS` (standaard Cunera en Glenn).
+
+Beheer de lijst onder **Team Monitor → Instellingen → Toegang** (aanvinken per
+gebruiker). Technisch werkt dit via een eigen capability `stm_access` (los van de
+WordPress-rol), zodat ook een niet-beheerder als Cunera toegang kan hebben en
+andere medewerkers/beheerders het juist níét zien. Raakt de lijst per ongeluk
+leeg, dan mogen beheerders er weer in om het opnieuw in te stellen (geen lock-out).
+
 ## Het dashboard
 
 **Team Monitor** (hoofdmenu) toont voor een gekozen periode:

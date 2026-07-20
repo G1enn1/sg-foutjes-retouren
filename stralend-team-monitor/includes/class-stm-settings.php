@@ -12,6 +12,52 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class STM_Settings {
 
+	/** Custom capability that gates the whole plugin. */
+	const CAP = 'stm_access';
+
+	/** Users with these emails are granted access on activation. */
+	const DEFAULT_ACCESS_EMAILS = array( 'cunera@stralendgroen.nl', 'glenn@stralendgroen.nl' );
+
+	/* ------------------------------------------------------------------ *
+	 * Access control — only allow-listed users may see/use the plugin
+	 * ------------------------------------------------------------------ */
+
+	/** May the current user see and use the plugin? */
+	public static function can_access() {
+		if ( current_user_can( self::CAP ) ) {
+			return true;
+		}
+		// Recovery: if no one has been granted access yet, let admins in so they
+		// can configure the allow-list (prevents lock-out on a fresh install).
+		if ( ! self::access_grants_exist() && current_user_can( 'manage_options' ) ) {
+			return true;
+		}
+		return false;
+	}
+
+	/** Does at least one user currently hold the access capability? */
+	public static function access_grants_exist() {
+		$users = get_users( array(
+			'capability' => self::CAP,
+			'number'     => 1,
+			'fields'     => 'ID',
+		) );
+		return ! empty( $users );
+	}
+
+	/** Grant / revoke access for a single user. */
+	public static function set_access( $user_id, $allow ) {
+		$user = get_user_by( 'id', (int) $user_id );
+		if ( ! $user ) {
+			return;
+		}
+		if ( $allow ) {
+			$user->add_cap( self::CAP );
+		} else {
+			$user->remove_cap( self::CAP );
+		}
+	}
+
 	/* ------------------------------------------------------------------ *
 	 * Accessors
 	 * ------------------------------------------------------------------ */
@@ -87,7 +133,7 @@ class STM_Settings {
 		if ( ! isset( $_POST['stm_settings_nonce'] ) ) {
 			return;
 		}
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! self::can_access() ) {
 			return;
 		}
 		check_admin_referer( 'stm_save_settings', 'stm_settings_nonce' );
@@ -123,6 +169,14 @@ class STM_Settings {
 			}
 		}
 
+		// Access allow-list (the section is always submitted with this form).
+		if ( isset( $_POST['stm_access_section'] ) ) {
+			$allowed = isset( $_POST['stm_access_users'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['stm_access_users'] ) ) : array();
+			foreach ( get_users( array( 'fields' => array( 'ID' ) ) ) as $u ) {
+				self::set_access( $u->ID, in_array( (int) $u->ID, $allowed, true ) );
+			}
+		}
+
 		add_settings_error( 'stm', 'stm_saved', __( 'Instellingen opgeslagen.', 'stralend-team-monitor' ), 'updated' );
 		set_transient( 'stm_settings_notice', 1, 30 );
 		wp_safe_redirect( add_query_arg( array( 'page' => 'stm-settings', 'updated' => '1' ), admin_url( 'admin.php' ) ) );
@@ -130,8 +184,8 @@ class STM_Settings {
 	}
 
 	public function render_page() {
-		if ( ! current_user_can( 'manage_options' ) ) {
-			return;
+		if ( ! self::can_access() ) {
+			wp_die( esc_html__( 'Je hebt geen toegang tot Team Monitor.', 'stralend-team-monitor' ) );
 		}
 		$employees   = self::employees();
 		$employees[] = array( 'id' => '', 'name' => '', 'email' => '', 'ext' => '', 'hubspot_owner_id' => '' ); // blank add-row
@@ -194,6 +248,28 @@ class STM_Settings {
 				<h2><?php esc_html_e( 'Voys Freedom — webhook', 'stralend-team-monitor' ); ?></h2>
 				<p class="description"><?php esc_html_e( 'Zet in Voys Freedom "Gespreksnotificaties" aan en wijs die naar onderstaande URL (POST). De sleutel beveiligt het endpoint.', 'stralend-team-monitor' ); ?></p>
 				<p><code style="user-select:all"><?php echo esc_html( $webhook_url ); ?></code></p>
+
+				<h2><?php esc_html_e( 'Toegang', 'stralend-team-monitor' ); ?></h2>
+				<p class="description"><?php esc_html_e( 'Alleen aangevinkte gebruikers zien het Team Monitor-menu en de cijfers. Standaard: Cunera en Glenn.', 'stralend-team-monitor' ); ?></p>
+				<input type="hidden" name="stm_access_section" value="1" />
+				<table class="widefat striped" style="max-width:640px">
+					<thead><tr>
+						<th style="width:60px"><?php esc_html_e( 'Toegang', 'stralend-team-monitor' ); ?></th>
+						<th><?php esc_html_e( 'Gebruiker', 'stralend-team-monitor' ); ?></th>
+						<th><?php esc_html_e( 'Rol', 'stralend-team-monitor' ); ?></th>
+					</tr></thead>
+					<tbody>
+					<?php foreach ( get_users( array( 'orderby' => 'display_name' ) ) as $user ) : ?>
+						<tr>
+							<td style="text-align:center">
+								<input type="checkbox" name="stm_access_users[]" value="<?php echo (int) $user->ID; ?>" <?php checked( user_can( $user, self::CAP ) ); ?> />
+							</td>
+							<td><?php echo esc_html( $user->display_name ); ?><br><span class="description"><?php echo esc_html( $user->user_email ); ?></span></td>
+							<td><?php echo esc_html( implode( ', ', $user->roles ) ); ?></td>
+						</tr>
+					<?php endforeach; ?>
+					</tbody>
+				</table>
 
 				<?php submit_button( __( 'Opslaan', 'stralend-team-monitor' ) ); ?>
 			</form>

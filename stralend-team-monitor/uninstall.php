@@ -23,3 +23,9 @@ foreach ( array(
 ) as $option ) {
 	delete_option( $option );
 }
+
+// Remove the access capability from every user.
+foreach ( get_users( array( 'fields' => array( 'ID' ) ) ) as $u ) {
+	$user = new WP_User( $u->ID );
+	$user->remove_cap( 'stm_access' );
+}
