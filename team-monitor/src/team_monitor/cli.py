@@ -41,12 +41,22 @@ def collect(args) -> list[Interaction]:
 
     interactions: list[Interaction] = []
 
-    if settings.voipgrid_token:
-        from .sources.voipgrid import VoipgridClient
+    # --- Telefoon: Voys Freedom (export of webhook-store), of legacy VoIPGRID-pull ---
+    if args.voys_export:
+        from .sources.voys_export import parse_export
+        interactions += parse_export(args.voys_export, settings)
+    elif args.voys_store:
+        from .sources.voys_webhook import load_store
+        calls = load_store(args.voys_store)
+        interactions += [c for c in calls if start <= c.timestamp.date() <= end]
+    elif settings.voipgrid_token:
+        from .sources.voipgrid import VoipgridClient  # legacy VoIPGRID-platform
         interactions += VoipgridClient(settings).fetch(start, end)
     else:
-        print("[i] Geen VOIPGRID_TOKEN gezet — telefoondata overgeslagen.", file=sys.stderr)
+        print("[i] Geen telefoonbron (--voys-export / --voys-store / VOIPGRID_TOKEN) — overgeslagen.",
+              file=sys.stderr)
 
+    # --- E-mail: HubSpot Private App-token ---
     if settings.hubspot_token:
         from .sources.hubspot import HubspotClient
         interactions += HubspotClient(settings).fetch_emails(start, end)
@@ -54,7 +64,7 @@ def collect(args) -> list[Interaction]:
         print("[i] Geen HUBSPOT_TOKEN gezet — e-maildata overgeslagen.", file=sys.stderr)
 
     if not interactions:
-        print("[!] Geen data opgehaald. Controleer tokens/config of gebruik --demo.", file=sys.stderr)
+        print("[!] Geen data opgehaald. Controleer bronnen/config of gebruik --demo.", file=sys.stderr)
     return interactions
 
 
@@ -66,6 +76,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--from", dest="from_", help="startdatum YYYY-MM-DD")
     ap.add_argument("--to", help="einddatum YYYY-MM-DD")
     ap.add_argument("--days", type=int, default=14, help="aantal dagen terug als geen from/to (default 14)")
+    ap.add_argument("--voys-export", dest="voys_export",
+                    help="pad naar een Voys Freedom gesprekkenlijst-export (CSV/Excel)")
+    ap.add_argument("--voys-store", dest="voys_store",
+                    help="pad naar de JSONL-store gevuld door de Gespreksnotificaties-webhook")
     ap.add_argument("--output", default="out", help="uitvoermap (default: ./out)")
     ap.add_argument("--formats", default="html,csv",
                     help="komma-gescheiden: html,csv,excel,gsheet (default html,csv)")

@@ -3,7 +3,7 @@
 Een op zichzelf staande tool die per **medewerker per dag** in kaart brengt:
 
 - **hoeveel e-mails** er verstuurd zijn (via **HubSpot**), en
-- **hoeveel telefoontjes** met **hoeveel minuten** er zijn afgehandeld (via **Voys**, dat technisch op het **VoIPGRID-platform** draait).
+- **hoeveel telefoontjes** met **hoeveel minuten** er zijn afgehandeld (via **Voys Freedom** — gesprekkenlijst-export of de Gespreksnotificaties-webhook).
 
 Doel: beter inzicht in welke medewerkers goed presteren, hoeveel progressie ze maken, en — voor zover de data dat toelaat — hoe zwaar het afgehandelde werk was.
 
@@ -29,16 +29,22 @@ Excel-export erbij? `pip install openpyxl` en voeg `excel` toe aan `--formats`.
 
 ## Live koppelen aan Voys en HubSpot
 
-### 1. Tokens (in `.env`)
+### 1a. Telefoon — Voys Freedom (twee schone routes)
 
-Kopieer `.env.example` naar `.env` en vul in:
+Voys Freedom heeft **geen** open CDR-pull-API. Kies wat past:
 
-| Bron | Waar vandaan |
-| --- | --- |
-| `VOIPGRID_TOKEN` (+ `VOIPGRID_USER`) | Voys draait op VoIPGRID. Maak in je VoIPGRID-account een **API-token** aan; gebruik je login-e-mail als user. Auth: `Authorization: Token <user>:<token>`. |
-| `HUBSPOT_TOKEN` | HubSpot → Instellingen → Integraties → **Private Apps** → nieuwe app met scopes `sales-email-read`, `crm.objects.owners.read` (en `tickets` als je categorieën/moeilijkheid wilt). |
+| Route | Hoe | Voor wie |
+| --- | --- | --- |
+| **Export** (snelste start) | In Freedom → gesprekkenlijst → **exporteren** naar CSV/Excel. Rapporteer met `--voys-export bestand.csv`. Toewijzing loopt via het interne toestelnummer in de kolommen `Bron`/`Bestemming`. | Handmatig of periodiek; geen hosting nodig. |
+| **Gespreksnotificaties-webhook** (volledig automatisch) | Zet in Freedom **Gespreksnotificaties** aan en wijs die naar `https://<jouw-host>/voys`. Draai de ontvanger (`python -m team_monitor.sources.voys_webhook`), die elk gesprek in `data/calls.jsonl` schrijft. Rapporteer met `--voys-store data/calls.jsonl`. | Live/dagelijks dashboard; vereist een klein bereikbaar endpoint (achter HTTPS). |
 
-> **Voys/VoIPGRID let op:** het exacte endpoint en de veldnamen van de Call Detail Records verschillen per API-versie/reseller. Er is één plek om dat bij te stellen: `_normalize()` in `src/team_monitor/sources/voipgrid.py`. Draai `python -m team_monitor.sources.voipgrid --probe` om één ruwe record te zien en de veldnamen te controleren. Lukt de API niet, dan kan hetzelfde model gevoed worden vanuit de CSV-export van de Voys-belstatistieken.
+> Verifieer één keer met echte data: `python -m team_monitor.sources.voys_export <export.csv> config.yaml` (export) of bekijk de gelogde ruwe payload van de webhook. Kloppen kolom-/veldnamen niet, pas dan `COLUMNS` in `voys_export.py` resp. `normalize()` in `voys_webhook.py` aan.
+
+### 1b. E-mail — HubSpot Private App-token
+
+De HubSpot **connector** (marketing/campagnes) bevat geen per-medewerker e-maildata. Gebruik daarom een **Private App-token**:
+
+HubSpot → Instellingen → Integraties → **Private Apps** → nieuwe app met scopes `sales-email-read`, `crm.objects.owners.read` (en `tickets` als je categorieën/moeilijkheid wilt). Zet de token als `HUBSPOT_TOKEN` in `.env`.
 
 ### 2. Medewerker-mapping (in `config.yaml`)
 
@@ -48,11 +54,16 @@ Owner-id's niet paraat? De HubSpot-client heeft `HubspotClient.owners()` om ze o
 
 ### 3. Draaien
 
+Met een Voys-export (e-mail via `HUBSPOT_TOKEN` uit `.env`):
+
 ```bash
 set -a; source .env; set +a
 PYTHONPATH=src python3 -m team_monitor --config config.yaml \
+    --voys-export gesprekken.csv \
     --from 2026-07-01 --to 2026-07-19 --formats html,csv,excel
 ```
+
+Of met de webhook-store in plaats van een export: `--voys-store data/calls.jsonl`.
 
 ### 4. (Optioneel) naar Google Sheets
 
@@ -117,8 +128,10 @@ team-monitor/
 │   ├── metrics.py         # moeilijkheid + progressie (weekly_trend)
 │   ├── config.py          # medewerker-mapping + tokens uit env
 │   ├── sources/
-│   │   ├── voipgrid.py    # Voys/VoIPGRID CDR-client (pas _normalize aan)
-│   │   ├── hubspot.py     # HubSpot e-mail/owner-client
+│   │   ├── voys_export.py # Voys Freedom gesprekkenlijst-export importer
+│   │   ├── voys_webhook.py# Gespreksnotificaties-ontvanger + JSONL-store
+│   │   ├── voipgrid.py    # legacy VoIPGRID CDR-pull (oudere platforms)
+│   │   ├── hubspot.py     # HubSpot e-mail/owner-client (Private App-token)
 │   │   └── sample.py      # voorbeelddata voor de demo
 │   ├── exporters/         # csv / html / excel / gsheet
 │   └── cli.py             # `python -m team_monitor`
@@ -134,4 +147,5 @@ pip install pytest && python3 -m pytest team-monitor/tests -q
 ## Status / vervolg
 
 - ✅ Kern, aggregatie, moeilijkheids- en progressie-metrics, 4 exportvormen, demo, tests.
-- 🔜 Zodra tokens er zijn: veldnamen van de VoIPGRID-CDR verifiëren (`--probe`) en bevestigen of jullie e-mail via **gelogde 1-op-1 mails** of een **gedeelde inbox/Conversations** loopt (dan de `fetch_conversations`-tak in `hubspot.py` activeren).
+- ✅ Voys Freedom: gesprekkenlijst-export-importer + Gespreksnotificaties-webhookontvanger.
+- 🔜 Zodra er echte data is: kolom-/veldnamen verifiëren tegen één echte Voys-export/-payload, en bevestigen of de HubSpot-mail via **gelogde 1-op-1 mails** of een **gedeelde inbox/Conversations** loopt (dan de `fetch_conversations`-tak in `hubspot.py` activeren).

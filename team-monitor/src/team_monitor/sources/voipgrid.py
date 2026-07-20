@@ -1,9 +1,10 @@
-"""Voys phone data via the VoIPGRID platform API (Call Detail Records).
+"""LEGACY: Voys phone data via the older VoIPGRID platform CDR API.
 
-Voys runs on the VoIPGRID platform, whose REST API exposes CDRs with the fields
-we need: timestamp, direction, talk time (seconds) and the internal user. Voys'
-own webhooks are only for call routing, not statistics, so CDR is the right
-source for "calls + minutes per employee per day".
+NOTE: Voys Freedom (the current platform) does NOT expose this pull API. Use
+``voys_export.py`` (call-list export) or ``voys_webhook.py`` (Gespreksnotificaties)
+instead. This module is kept only for accounts still on the older VoIPGRID-based
+stack, where the REST API exposes CDRs with timestamp, direction, talk time
+(seconds) and the internal user.
 
 Auth: token auth, header ``Authorization: Token <user>:<api_token>``.
 

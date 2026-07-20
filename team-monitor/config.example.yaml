@@ -1,8 +1,11 @@
 # Kopieer dit naar config.yaml en vul je eigen team in.
 #
 # De 'id' is een vrij te kiezen, vaste sleutel per medewerker. De koppelvelden
-# vertalen de identiteiten uit Voys/VoIPGRID en HubSpot naar diezelfde persoon:
-#   - voipgrid_user    : de gebruiker/interne toestelnummer in VoIPGRID
+# vertalen de identiteiten uit Voys en HubSpot naar diezelfde persoon:
+#   - voipgrid_user    : het INTERNE TOESTELNUMMER in Voys Freedom, precies zoals
+#                        het in de gesprekkenlijst-export in de kolommen 'Bron'
+#                        (uitgaand) en 'Bestemming' (inkomend) staat. Bijv. "201".
+#                        Ook de webhook-ontvanger gebruikt dit nummer.
 #   - hubspot_owner_id : het owner-id in HubSpot (Instellingen > Gebruikers, of via
 #                        de Owners API). email mag als alternatief/aanvulling.
 #
