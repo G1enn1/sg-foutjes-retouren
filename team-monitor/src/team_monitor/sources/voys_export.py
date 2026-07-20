@@ -30,12 +30,14 @@ from ..config import Settings
 from ..models import Channel, Direction, Interaction
 
 # Map our logical field -> possible column headers in the export (case-insensitive).
+# Voys Freedom's actual export uses: Datum, Inkomend / Uitgaand, Tijdsduur (in
+# SECONDS), Beller (source), Bestemming (destination, "2xx/Naam" for internal).
 COLUMNS: dict[str, tuple[str, ...]] = {
     "datum": ("Datum", "Date", "Starttijd", "Start"),
-    "direction": ("Inkomend/Uitgaand", "Richting", "Direction", "In/Uit"),
-    "duur": ("Duur", "Gespreksduur", "Duration", "Talk time"),
-    "wachttijd": ("Wachttijd", "Wait time"),
-    "bron": ("Bron", "Source", "Van", "Caller"),
+    "direction": ("Inkomend / Uitgaand", "Inkomend/Uitgaand", "Richting", "Direction", "In/Uit"),
+    "duur": ("Tijdsduur", "Duur", "Gespreksduur", "Duration", "Talk time"),
+    "wachttijd": ("Wachtlijst", "Wachttijd", "Wait time"),
+    "bron": ("Beller", "Bron", "Source", "Van", "Caller"),
     "bestemming": ("Bestemming", "Destination", "Naar", "Callee"),
 }
 
