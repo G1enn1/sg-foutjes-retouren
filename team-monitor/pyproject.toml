@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "team-monitor"
+version = "0.1.0"
+description = "E-mail- en telefoonstatistieken per medewerker per dag (Voys/VoIPGRID + HubSpot)"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+live = ["requests>=2.31", "PyYAML>=6.0"]
+excel = ["openpyxl>=3.1"]
+gsheet = ["gspread>=6.0", "google-auth>=2.28"]
+
+[project.scripts]
+team-monitor = "team_monitor.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

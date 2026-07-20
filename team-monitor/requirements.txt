@@ -1,0 +1,15 @@
+# De kern + demo draaien op pure stdlib — geen van onderstaande is nodig voor `--demo`.
+# Installeer alleen wat je gebruikt.
+
+# Live data ophalen (Voys/VoIPGRID + HubSpot):
+requests>=2.31
+
+# Config-bestand inlezen:
+PyYAML>=6.0
+
+# Excel-export (--formats excel):
+openpyxl>=3.1
+
+# Google Sheets-export (--formats gsheet):
+gspread>=6.0
+google-auth>=2.28

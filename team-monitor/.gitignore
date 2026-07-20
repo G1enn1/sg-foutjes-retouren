@@ -1,0 +1,17 @@
+# secrets & local config
+.env
+config.yaml
+*service-account*.json
+
+# generated output
+out/
+*.xlsx
+*.csv
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/

@@ -1,0 +1,37 @@
+# Kopieer dit naar config.yaml en vul je eigen team in.
+#
+# De 'id' is een vrij te kiezen, vaste sleutel per medewerker. De koppelvelden
+# vertalen de identiteiten uit Voys/VoIPGRID en HubSpot naar diezelfde persoon:
+#   - voipgrid_user    : de gebruiker/interne toestelnummer in VoIPGRID
+#   - hubspot_owner_id : het owner-id in HubSpot (Instellingen > Gebruikers, of via
+#                        de Owners API). email mag als alternatief/aanvulling.
+#
+# Vind je owner-id's niet? Draai eenmalig de HubSpot Owners API; de client heeft
+# daar een helper voor (HubspotClient.owners()).
+
+employees:
+  - id: sanne
+    name: "Sanne de Vries"
+    voipgrid_user: "201"
+    hubspot_owner_id: "77001111"
+    email: "sanne@stralendgroen.nl"
+  - id: tom
+    name: "Tom Bakker"
+    voipgrid_user: "202"
+    hubspot_owner_id: "77002222"
+    email: "tom@stralendgroen.nl"
+  - id: aisha
+    name: "Aisha El Amrani"
+    voipgrid_user: "203"
+    hubspot_owner_id: "77003333"
+    email: "aisha@stralendgroen.nl"
+
+# Relatieve zwaarte per ticket-categorie. Dit is dé knop waarmee je "een
+# garantieclaim is zwaarder dan een adreswijziging" vastlegt. Pas aan naar jullie
+# eigen werkelijkheid. Categorieën zonder gewicht tellen als 1.0.
+category_weights:
+  adreswijziging: 1.0
+  retour: 1.5
+  verkeerd geleverd: 2.0
+  garantie: 3.0
+  klacht: 3.5
