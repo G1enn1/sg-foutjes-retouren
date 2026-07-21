@@ -12,10 +12,20 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class STM_HubSpot {
 
-	const BASE = 'https://api.hubapi.com';
-
 	private function token() {
 		return STM_Settings::hubspot_token();
+	}
+
+	/**
+	 * API host, derived from the token's region prefix. Private App tokens are
+	 * "pat-<region>-..." (e.g. pat-eu1 for EU-hosted portals like ours), and the
+	 * matching API host is api-<region>.hubapi.com.
+	 */
+	private function base_url() {
+		if ( preg_match( '/^pat-([a-z]{2}\d+)-/', $this->token(), $m ) && 'na1' !== $m[1] ) {
+			return 'https://api-' . $m[1] . '.hubapi.com';
+		}
+		return 'https://api.hubapi.com';
 	}
 
 	private function ok() {
@@ -57,7 +67,7 @@ class STM_HubSpot {
 				$body['after'] = $after;
 			}
 
-			$resp = wp_remote_post( self::BASE . '/crm/v3/objects/emails/search', array(
+			$resp = wp_remote_post( $this->base_url() . '/crm/v3/objects/emails/search', array(
 				'headers' => array(
 					'Authorization' => 'Bearer ' . $this->token(),
 					'Content-Type'  => 'application/json',
@@ -117,7 +127,7 @@ class STM_HubSpot {
 		$after = null;
 		$guard = 0;
 		do {
-			$url = self::BASE . '/crm/v3/owners?limit=100' . ( $after ? '&after=' . rawurlencode( $after ) : '' );
+			$url = $this->base_url() . '/crm/v3/owners?limit=100' . ( $after ? '&after=' . rawurlencode( $after ) : '' );
 			$resp = wp_remote_get( $url, array(
 				'headers' => array( 'Authorization' => 'Bearer ' . $this->token() ),
 				'timeout' => 30,
