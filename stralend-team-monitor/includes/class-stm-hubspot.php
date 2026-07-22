@@ -67,20 +67,20 @@ class STM_HubSpot {
 				$body['after'] = $after;
 			}
 
-			$resp = wp_remote_post( $this->base_url() . '/crm/v3/objects/emails/search', array(
-				'headers' => array(
-					'Authorization' => 'Bearer ' . $this->token(),
-					'Content-Type'  => 'application/json',
-				),
-				'body'    => wp_json_encode( $body ),
-				'timeout' => 30,
-			) );
+			$resp = $this->post_json( $this->base_url() . '/crm/v3/objects/emails/search', $body );
 
 			if ( is_wp_error( $resp ) ) {
 				return array( 'error' => $resp->get_error_message(), 'inserted' => $inserted, 'fetched' => $fetched );
 			}
 			$code = wp_remote_retrieve_response_code( $resp );
 			$data = json_decode( wp_remote_retrieve_body( $resp ), true );
+			if ( 429 === (int) $code ) {
+				return array(
+					'error'    => __( 'HubSpot-limiet bereikt (te veel verzoeken kort na elkaar). De tot nu toe opgehaalde e-mails zijn opgeslagen — probeer het over een minuut opnieuw; er wordt niets dubbel geteld.', 'stralend-team-monitor' ),
+					'inserted' => $inserted,
+					'fetched'  => $fetched,
+				);
+			}
 			if ( 200 !== (int) $code ) {
 				$msg = isset( $data['message'] ) ? $data['message'] : ( 'HTTP ' . $code );
 				return array( 'error' => $msg, 'inserted' => $inserted, 'fetched' => $fetched );
@@ -111,9 +111,40 @@ class STM_HubSpot {
 
 			$after = $data['paging']['next']['after'] ?? null;
 			$guard++;
+			if ( $after ) {
+				usleep( 350000 ); // pace ourselves under HubSpot's ~4 search requests/second
+			}
 		} while ( $after && $guard < 200 );
 
 		return array( 'inserted' => $inserted, 'fetched' => $fetched );
+	}
+
+	/**
+	 * POST with 429 handling: honor Retry-After (capped) and retry a few times
+	 * before surfacing the rate-limit to the caller.
+	 */
+	private function post_json( $url, array $body, $attempts = 4 ) {
+		$resp = null;
+		for ( $try = 1; $try <= $attempts; $try++ ) {
+			$resp = wp_remote_post( $url, array(
+				'headers' => array(
+					'Authorization' => 'Bearer ' . $this->token(),
+					'Content-Type'  => 'application/json',
+				),
+				'body'    => wp_json_encode( $body ),
+				'timeout' => 30,
+			) );
+			if ( is_wp_error( $resp ) ) {
+				return $resp;
+			}
+			if ( 429 === (int) wp_remote_retrieve_response_code( $resp ) && $try < $attempts ) {
+				$wait = (int) wp_remote_retrieve_header( $resp, 'retry-after' );
+				sleep( min( max( 1, $wait ), 10 ) );
+				continue;
+			}
+			return $resp;
+		}
+		return $resp;
 	}
 
 	/**
