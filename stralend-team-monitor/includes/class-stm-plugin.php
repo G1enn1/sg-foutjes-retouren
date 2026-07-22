@@ -80,5 +80,23 @@ class STM_Plugin {
 			STM_DB::create_table();
 			update_option( 'stm_db_version', STM_DB_VERSION );
 		}
+		$this->maybe_purge_epoch_rows();
+	}
+
+	/**
+	 * One-time repair: a parsing bug stored HubSpot emails with a 1970 epoch
+	 * date. Those rows are invisible in any real date range, and their dedup
+	 * keys would block a correct re-sync, so delete them once and let the user
+	 * re-run the sync.
+	 */
+	private function maybe_purge_epoch_rows() {
+		if ( get_option( 'stm_epoch_purge_done' ) ) {
+			return;
+		}
+		global $wpdb;
+		$table = STM_DB::table();
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$wpdb->query( "DELETE FROM {$table} WHERE source = 'hubspot' AND event_date < '2000-01-01'" );
+		update_option( 'stm_epoch_purge_done', 1 );
 	}
 }

@@ -96,8 +96,7 @@ class STM_HubSpot {
 				$employee  = $owner_index[ $owner_id ];
 				$dir_raw   = strtoupper( (string) ( $props['hs_email_direction'] ?? '' ) );
 				$direction = ( false !== strpos( $dir_raw, 'INCOMING' ) ) ? 'inbound' : 'outbound';
-				$ts_ms     = (int) ( $props['hs_timestamp'] ?? 0 );
-				$ts        = $ts_ms ? gmdate( 'Y-m-d H:i:s', (int) ( $ts_ms / 1000 ) ) : current_time( 'mysql' );
+				$ts        = $this->parse_hs_timestamp( $props['hs_timestamp'] ?? '' );
 
 				$inserted += STM_DB::insert( array(
 					'event_ts'    => $ts,
@@ -117,6 +116,25 @@ class STM_HubSpot {
 		} while ( $after && $guard < 200 );
 
 		return array( 'inserted' => $inserted, 'fetched' => $fetched );
+	}
+
+	/**
+	 * hs_timestamp arrives as an ISO 8601 string on the v3 API (e.g.
+	 * "2026-07-14T09:31:22.000Z") but as epoch milliseconds in some contexts.
+	 * Accept both and return a site-local MySQL datetime.
+	 */
+	private function parse_hs_timestamp( $value ) {
+		$value = trim( (string) $value );
+		if ( '' !== $value ) {
+			if ( ctype_digit( $value ) ) {
+				return get_date_from_gmt( gmdate( 'Y-m-d H:i:s', (int) ( (int) $value / 1000 ) ) );
+			}
+			$t = strtotime( $value );
+			if ( $t ) {
+				return get_date_from_gmt( gmdate( 'Y-m-d H:i:s', $t ) );
+			}
+		}
+		return current_time( 'mysql' );
 	}
 
 	/**
