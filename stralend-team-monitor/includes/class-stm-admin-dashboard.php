@@ -199,7 +199,7 @@ class STM_Admin_Dashboard {
 
 	private function render_summary( $totals ) {
 		echo '<table class="widefat striped stm-summary"><thead><tr>';
-		foreach ( array( 'Medewerker', 'E-mails', 'Telefoontjes', 'Belmin.', 'Gem/gesprek',
+		foreach ( array( 'Medewerker', 'Verzonden ✉', 'Ontvangen ✉', 'Telefoontjes', 'Belmin.', 'Gem/gesprek',
 			'Zwaarte', 'Touches/ticket', 'Escalatie', 'FCR', 'CSAT' ) as $h ) {
 			echo '<th>' . esc_html( $h ) . '</th>';
 		}
@@ -210,6 +210,7 @@ class STM_Admin_Dashboard {
 			echo '<tr>';
 			echo '<td class="stm-name">' . esc_html( $t['employee_name'] ) . '</td>';
 			echo '<td>' . (int) $t['emails_sent'] . '</td>';
+			echo '<td>' . (int) $t['emails_received'] . '</td>';
 			echo '<td>' . (int) $t['calls_handled'] . '</td>';
 			echo '<td>' . esc_html( STM_Metrics::call_minutes( $t ) ) . '</td>';
 			echo '<td>' . esc_html( STM_Metrics::avg_call_minutes( $t ) ) . '</td>';

@@ -126,6 +126,81 @@ class STM_Trends {
 		);
 	}
 
+	/**
+	 * Inbound-email response stats for a window (team level).
+	 *
+	 * Pairs each inbound email with the first outbound email in the same
+	 * HubSpot thread at or after it. Emails without a thread id can only be
+	 * counted as "binnengekomen", never as beantwoord/onbeantwoord — coverage
+	 * is reported so the rate is read honestly.
+	 *
+	 * @return array {
+	 *   inbound, inbound_threaded, answered, answered_same_day,
+	 *   avg_first_response_hours|null, per_day: date => [inbound, same_day]
+	 * }
+	 */
+	private function response_stats( $from, $to ) {
+		global $wpdb;
+		$table = STM_DB::table();
+		// Include a lookahead window so replies just after the period still count.
+		$look = gmdate( 'Y-m-d', strtotime( $to . ' +7 days' ) );
+		$sql  = "SELECT event_ts, event_date, direction, thread_id
+			FROM {$table}
+			WHERE channel = 'email' AND event_date BETWEEN %s AND %s
+			ORDER BY event_ts ASC";
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$rows = $wpdb->get_results( $wpdb->prepare( $sql, array( $from, $look ) ), ARRAY_A );
+
+		$out_by_thread = array();
+		foreach ( $rows as $r ) {
+			if ( 'outbound' === $r['direction'] && ! empty( $r['thread_id'] ) ) {
+				$out_by_thread[ $r['thread_id'] ][] = $r['event_ts'];
+			}
+		}
+
+		$stats = array(
+			'inbound'           => 0,
+			'inbound_threaded'  => 0,
+			'answered'          => 0,
+			'answered_same_day' => 0,
+			'response_hours'    => array(),
+			'per_day'           => array(),
+		);
+		foreach ( $rows as $r ) {
+			if ( 'inbound' !== $r['direction'] || $r['event_date'] > $to ) {
+				continue;
+			}
+			$day = $r['event_date'];
+			if ( ! isset( $stats['per_day'][ $day ] ) ) {
+				$stats['per_day'][ $day ] = array( 'inbound' => 0, 'same_day' => 0 );
+			}
+			$stats['inbound']++;
+			$stats['per_day'][ $day ]['inbound']++;
+
+			if ( empty( $r['thread_id'] ) || empty( $out_by_thread[ $r['thread_id'] ] ) ) {
+				if ( ! empty( $r['thread_id'] ) ) {
+					$stats['inbound_threaded']++;
+				}
+				continue;
+			}
+			$stats['inbound_threaded']++;
+			$in_ts = strtotime( $r['event_ts'] );
+			foreach ( $out_by_thread[ $r['thread_id'] ] as $out_ts_raw ) {
+				$out_ts = strtotime( $out_ts_raw );
+				if ( $out_ts >= $in_ts ) {
+					$stats['answered']++;
+					$stats['response_hours'][] = ( $out_ts - $in_ts ) / HOUR_IN_SECONDS;
+					if ( substr( $out_ts_raw, 0, 10 ) === $day ) {
+						$stats['answered_same_day']++;
+						$stats['per_day'][ $day ]['same_day']++;
+					}
+					break;
+				}
+			}
+		}
+		return $stats;
+	}
+
 	/** weekday(0=ma) × hour counts for a window. */
 	private function heatmap_data( $from, $to, $employee_id = '' ) {
 		global $wpdb;
@@ -234,6 +309,7 @@ class STM_Trends {
 			<?php
 			$this->render_kpis( $to );
 			$this->render_team_section( $from, $to, $bucket );
+			$this->render_response_section( $from, $to, $bucket );
 			$this->render_employee_section( $from, $to, $emp, $emp_ids, $cmp_raw );
 			$this->render_heatmap_section( $from, $to, ( 'emp' === $hm ) ? $emp : '', ( 'emp' === $hm && isset( $emp_ids[ $emp ] ) ) ? $emp_ids[ $emp ] : '' );
 			?>
@@ -341,6 +417,64 @@ class STM_Trends {
 		$this->legend( $series );
 		$this->line_chart( $cur['labels'], $series, 720, 240 );
 		$this->series_table( __( 'Tabel: team per periode', 'stralend-team-monitor' ), $cur['labels'], $series );
+	}
+
+	/** Inbound email volume + same-day answers (team). */
+	private function render_response_section( $from, $to, $bucket ) {
+		$stats = $this->response_stats( $from, $to );
+		if ( 0 === $stats['inbound'] ) {
+			return;
+		}
+
+		echo '<h2>' . esc_html__( 'E-mail — binnengekomen & dezelfde dag beantwoord (team)', 'stralend-team-monitor' ) . '</h2>';
+
+		$coverage = $stats['inbound'] ? (int) round( $stats['inbound_threaded'] / $stats['inbound'] * 100 ) : 0;
+		$rate     = $stats['inbound_threaded'] ? (int) round( $stats['answered_same_day'] / $stats['inbound_threaded'] * 100 ) : null;
+		$avg_h    = $stats['response_hours'] ? round( array_sum( $stats['response_hours'] ) / count( $stats['response_hours'] ), 1 ) : null;
+
+		echo '<div class="stm-tiles">';
+		$this->tile( __( 'Binnengekomen e-mails', 'stralend-team-monitor' ), number_format_i18n( $stats['inbound'] ), sprintf( __( 'in de gekozen periode', 'stralend-team-monitor' ) ) );
+		$this->tile(
+			__( 'Zelfde dag beantwoord', 'stralend-team-monitor' ),
+			( null === $rate ) ? '—' : $rate . '%',
+			( null === $rate )
+				? __( 'nog geen thread-informatie — synchroniseer HubSpot opnieuw', 'stralend-team-monitor' )
+				: sprintf( __( 'op basis van %d%% van de mails (met thread-info)', 'stralend-team-monitor' ), $coverage )
+		);
+		$this->tile(
+			__( 'Gem. eerste reactietijd', 'stralend-team-monitor' ),
+			( null === $avg_h ) ? '—' : ( ( $avg_h < 1 ) ? round( $avg_h * 60 ) . ' min' : number_format_i18n( $avg_h, 1 ) . ' uur' ),
+			__( 'van binnenkomst tot eerste antwoord in dezelfde thread', 'stralend-team-monitor' )
+		);
+		echo '</div>';
+
+		// Roll the per-day pairs up into the page's buckets.
+		$labels   = array();
+		$inbound  = array();
+		$same_day = array();
+		foreach ( $this->buckets( $from, $to, $bucket ) as $key => $label ) {
+			$labels[]   = $label;
+			$inbound[]  = 0;
+			$same_day[] = 0;
+		}
+		$keys = array_keys( $this->buckets( $from, $to, $bucket ) );
+		$pos  = array_flip( $keys );
+		foreach ( $stats['per_day'] as $day => $p ) {
+			$dt  = new DateTime( $day );
+			$key = ( 'week' === $bucket ) ? $dt->format( 'o' ) . $dt->format( 'W' ) : $day;
+			if ( isset( $pos[ $key ] ) ) {
+				$inbound[ $pos[ $key ] ]  += $p['inbound'];
+				$same_day[ $pos[ $key ] ] += $p['same_day'];
+			}
+		}
+
+		$series = array(
+			array( 'label' => __( 'binnengekomen', 'stralend-team-monitor' ), 'color' => self::C_A, 'values' => $inbound ),
+			array( 'label' => __( 'zelfde dag beantwoord', 'stralend-team-monitor' ), 'color' => self::C_B, 'values' => $same_day ),
+		);
+		$this->legend( $series );
+		$this->line_chart( $labels, $series, 720, 240 );
+		$this->series_table( __( 'Tabel: binnengekomen vs zelfde dag beantwoord', 'stralend-team-monitor' ), $labels, $series );
 	}
 
 	/** Per-employee weekly small multiples with comparison. */
@@ -458,13 +592,20 @@ class STM_Trends {
 			return;
 		}
 
-		// Hour span: default working window, expanded to any data outside it.
+		// Hour span: default working window, expanded only for hours that carry
+		// meaningful volume (avg >= 0.5/day) — stray night emails would otherwise
+		// stretch the grid to 0–23 with near-zero cells.
 		$h_min = 8;
 		$h_max = 18;
-		foreach ( $grid as $hours ) {
-			foreach ( array_keys( $hours ) as $h ) {
-				$h_min = min( $h_min, $h );
-				$h_max = max( $h_max, $h );
+		for ( $wd = 0; $wd < 7; $wd++ ) {
+			if ( empty( $occ[ $wd ] ) || empty( $grid[ $wd ] ) ) {
+				continue;
+			}
+			foreach ( $grid[ $wd ] as $h => $c ) {
+				if ( $c / $occ[ $wd ] >= 0.5 ) {
+					$h_min = min( $h_min, $h );
+					$h_max = max( $h_max, $h );
+				}
 			}
 		}
 
@@ -558,7 +699,9 @@ class STM_Trends {
 			return $mt + $ih - ( $v / $vmax * $ih );
 		};
 
-		$svg  = '<svg class="stm-chart" viewBox="0 0 ' . (int) $w . ' ' . (int) $h . '" role="img" preserveAspectRatio="xMidYMid meet">';
+		// Explicit width/height + inline max-width so the chart keeps a sane
+		// size even when the stylesheet is stale (aggressive page caching).
+		$svg = '<svg class="stm-chart" viewBox="0 0 ' . (int) $w . ' ' . (int) $h . '" width="' . (int) $w . '" height="' . (int) $h . '" style="max-width:100%;height:auto" role="img" preserveAspectRatio="xMidYMid meet">';
 
 		// gridlines + y ticks (4 steps, one axis).
 		for ( $t = 0; $t <= 4; $t++ ) {

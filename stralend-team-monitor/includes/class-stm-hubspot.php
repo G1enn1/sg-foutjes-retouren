@@ -59,7 +59,7 @@ class STM_HubSpot {
 					'value'        => (string) $start_ms,
 					'highValue'    => (string) $end_ms,
 				) ) ) ),
-				'properties' => array( 'hs_timestamp', 'hubspot_owner_id', 'hs_email_direction' ),
+				'properties' => array( 'hs_timestamp', 'hubspot_owner_id', 'hs_email_direction', 'hs_email_thread_id' ),
 				'limit'      => 100,
 				'sorts'      => array( array( 'propertyName' => 'hs_timestamp', 'direction' => 'ASCENDING' ) ),
 			);
@@ -104,6 +104,7 @@ class STM_HubSpot {
 					'channel'     => 'email',
 					'direction'   => $direction,
 					'source'      => 'hubspot',
+					'thread_id'   => (string) ( $props['hs_email_thread_id'] ?? '' ),
 					'dedup_seed'  => 'hs_email_' . ( $obj['id'] ?? ( $owner_id . $ts ) ),
 				) );
 			}
