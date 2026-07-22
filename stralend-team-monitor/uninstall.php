@@ -24,8 +24,9 @@ foreach ( array(
 	delete_option( $option );
 }
 
-// Remove the access capability from every user.
-foreach ( get_users( array( 'fields' => array( 'ID' ) ) ) as $u ) {
-	$user = new WP_User( $u->ID );
+// Remove the access capability from every user that holds it (targeted query —
+// don't iterate the full user table of a shop with thousands of customers).
+foreach ( get_users( array( 'capability' => 'stm_access', 'fields' => 'ID' ) ) as $uid ) {
+	$user = new WP_User( (int) $uid );
 	$user->remove_cap( 'stm_access' );
 }

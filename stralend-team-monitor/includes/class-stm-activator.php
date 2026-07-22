@@ -70,14 +70,16 @@ class STM_Activator {
 	 * out) plus any existing users matching the default access emails.
 	 */
 	private static function grant_default_access() {
+		// set_access() refuses non-administrators, so a customer account with a
+		// matching email can never be granted access here.
 		$current = wp_get_current_user();
 		if ( $current && $current->ID ) {
-			$current->add_cap( STM_Settings::CAP );
+			STM_Settings::set_access( $current->ID, true );
 		}
 		foreach ( STM_Settings::DEFAULT_ACCESS_EMAILS as $email ) {
 			$user = get_user_by( 'email', $email );
 			if ( $user ) {
-				$user->add_cap( STM_Settings::CAP );
+				STM_Settings::set_access( $user->ID, true );
 			}
 		}
 	}

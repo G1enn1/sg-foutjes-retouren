@@ -24,32 +24,38 @@ class STM_Settings {
 
 	/** May the current user see and use the plugin? */
 	public static function can_access() {
+		// Hard floor: only administrators can ever access. Customers, shop
+		// managers and every other role are always blocked — even if they
+		// somehow ended up holding the capability.
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return false;
+		}
 		if ( current_user_can( self::CAP ) ) {
 			return true;
 		}
-		// Recovery: if no one has been granted access yet, let admins in so they
-		// can configure the allow-list (prevents lock-out on a fresh install).
-		if ( ! self::access_grants_exist() && current_user_can( 'manage_options' ) ) {
-			return true;
+		// Recovery: if no administrator has been granted access yet, let admins
+		// in so they can configure the allow-list (prevents lock-out).
+		return ! self::access_grants_exist();
+	}
+
+	/** Does at least one administrator currently hold the access capability? */
+	public static function access_grants_exist() {
+		foreach ( get_users( array( 'capability' => self::CAP, 'fields' => 'ID' ) ) as $id ) {
+			if ( user_can( (int) $id, 'manage_options' ) ) {
+				return true;
+			}
 		}
 		return false;
 	}
 
-	/** Does at least one user currently hold the access capability? */
-	public static function access_grants_exist() {
-		$users = get_users( array(
-			'capability' => self::CAP,
-			'number'     => 1,
-			'fields'     => 'ID',
-		) );
-		return ! empty( $users );
-	}
-
-	/** Grant / revoke access for a single user. */
+	/** Grant / revoke access for a single user. Grants are admin-only. */
 	public static function set_access( $user_id, $allow ) {
 		$user = get_user_by( 'id', (int) $user_id );
 		if ( ! $user ) {
 			return;
+		}
+		if ( $allow && ! user_can( $user, 'manage_options' ) ) {
+			$allow = false; // never grant to non-administrators (customers etc.)
 		}
 		if ( $allow ) {
 			$user->add_cap( self::CAP );
@@ -170,10 +176,19 @@ class STM_Settings {
 		}
 
 		// Access allow-list (the section is always submitted with this form).
+		// Only administrators are ever considered; the checkbox list also only
+		// shows administrators, so customers can never be (un)ticked at all.
 		if ( isset( $_POST['stm_access_section'] ) ) {
 			$allowed = isset( $_POST['stm_access_users'] ) ? array_map( 'intval', (array) wp_unslash( $_POST['stm_access_users'] ) ) : array();
-			foreach ( get_users( array( 'fields' => array( 'ID' ) ) ) as $u ) {
+			foreach ( get_users( array( 'role' => 'administrator', 'fields' => array( 'ID' ) ) ) as $u ) {
 				self::set_access( $u->ID, in_array( (int) $u->ID, $allowed, true ) );
+			}
+			// Safety net: strip the capability from anyone who is not (or no
+			// longer) an administrator.
+			foreach ( get_users( array( 'capability' => self::CAP, 'fields' => 'ID' ) ) as $holder_id ) {
+				if ( ! user_can( (int) $holder_id, 'manage_options' ) ) {
+					self::set_access( $holder_id, false );
+				}
 			}
 		}
 
@@ -250,22 +265,20 @@ class STM_Settings {
 				<p><code style="user-select:all"><?php echo esc_html( $webhook_url ); ?></code></p>
 
 				<h2><?php esc_html_e( 'Toegang', 'stralend-team-monitor' ); ?></h2>
-				<p class="description"><?php esc_html_e( 'Alleen aangevinkte gebruikers zien het Team Monitor-menu en de cijfers. Standaard: Cunera en Glenn.', 'stralend-team-monitor' ); ?></p>
+				<p class="description"><?php esc_html_e( 'Alleen beheerders kunnen toegang krijgen — klanten en alle andere rollen worden altijd geblokkeerd en staan niet in deze lijst. Vink aan wie de cijfers mag zien (standaard: Cunera en Glenn).', 'stralend-team-monitor' ); ?></p>
 				<input type="hidden" name="stm_access_section" value="1" />
 				<table class="widefat striped" style="max-width:640px">
 					<thead><tr>
 						<th style="width:60px"><?php esc_html_e( 'Toegang', 'stralend-team-monitor' ); ?></th>
-						<th><?php esc_html_e( 'Gebruiker', 'stralend-team-monitor' ); ?></th>
-						<th><?php esc_html_e( 'Rol', 'stralend-team-monitor' ); ?></th>
+						<th><?php esc_html_e( 'Beheerder', 'stralend-team-monitor' ); ?></th>
 					</tr></thead>
 					<tbody>
-					<?php foreach ( get_users( array( 'orderby' => 'display_name' ) ) as $user ) : ?>
+					<?php foreach ( get_users( array( 'role' => 'administrator', 'orderby' => 'display_name' ) ) as $user ) : ?>
 						<tr>
 							<td style="text-align:center">
 								<input type="checkbox" name="stm_access_users[]" value="<?php echo (int) $user->ID; ?>" <?php checked( user_can( $user, self::CAP ) ); ?> />
 							</td>
 							<td><?php echo esc_html( $user->display_name ); ?><br><span class="description"><?php echo esc_html( $user->user_email ); ?></span></td>
-							<td><?php echo esc_html( implode( ', ', $user->roles ) ); ?></td>
 						</tr>
 					<?php endforeach; ?>
 					</tbody>
