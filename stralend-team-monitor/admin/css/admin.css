@@ -21,3 +21,31 @@
 .stm-matrix th, .stm-matrix td { text-align: center; white-space: nowrap; }
 .stm-matrix td.stm-name, .stm-matrix th:first-child { text-align: left; }
 .stm-matrix td.stm-empty { color: #bbb; }
+
+/* ---- Trends page ---- */
+.stm-tiles { display: flex; gap: 16px; flex-wrap: wrap; margin: 12px 0 20px; }
+.stm-tile { background: #fcfcfb; border: 1px solid #dcdcde; border-radius: 8px; padding: 12px 16px; min-width: 200px; display: flex; flex-direction: column; gap: 2px; }
+.stm-tile-label { color: #52514e; font-size: 12px; font-weight: 600; }
+.stm-tile-value { color: #0b0b0b; font-size: 30px; font-weight: 600; line-height: 1.2; }
+.stm-tile-sub { color: #898781; font-size: 12px; }
+
+.stm-trends h2 { margin-top: 26px; }
+.stm-legend { margin: 4px 0 6px; color: #52514e; font-size: 13px; }
+.stm-legend-item { margin-right: 16px; }
+.stm-chip { display: inline-block; width: 10px; height: 10px; border-radius: 5px; margin-right: 6px; vertical-align: baseline; }
+
+.stm-chart { display: block; width: 100%; max-width: 980px; height: auto; background: #fcfcfb; border: 1px solid #dcdcde; border-radius: 8px; }
+.stm-chart .stm-tick { font: 11px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #898781; }
+.stm-chart .stm-hit:hover { fill: rgba(11, 11, 11, 0.05); }
+
+.stm-multiples { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; max-width: 980px; }
+.stm-multiple h3 { margin: 4px 0 6px; font-size: 13px; }
+.stm-delta { color: #52514e; font-weight: 400; }
+
+.stm-heatmap { border-collapse: collapse; min-width: 560px; }
+.stm-heatmap th { padding: 4px 6px; color: #52514e; font-size: 12px; text-align: center; }
+.stm-heatmap td { padding: 5px 6px; text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; border: 2px solid #fff; border-radius: 4px; min-width: 34px; }
+.stm-heatmap td.stm-hm-zero { color: #c3c2b7; background: #fcfcfb; }
+
+.stm-table-details { margin: 8px 0 4px; max-width: 980px; }
+.stm-table-details summary { cursor: pointer; color: #52514e; }

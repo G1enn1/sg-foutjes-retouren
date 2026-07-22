@@ -34,6 +34,7 @@ require_once STM_PATH . 'includes/class-stm-voys-import.php';
 require_once STM_PATH . 'includes/class-stm-hubspot.php';
 require_once STM_PATH . 'includes/class-stm-cron.php';
 require_once STM_PATH . 'includes/class-stm-admin-dashboard.php';
+require_once STM_PATH . 'includes/class-stm-trends.php';
 require_once STM_PATH . 'includes/class-stm-plugin.php';
 
 register_activation_hook( __FILE__, array( 'STM_Activator', 'activate' ) );

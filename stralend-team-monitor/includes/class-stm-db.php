@@ -80,6 +80,12 @@ class STM_DB {
 			'created_at'       => current_time( 'mysql' ),
 		);
 
+		// Drop NULLs so nullable columns (csat, is_fcr, …) stay NULL in MySQL —
+		// wpdb::prepare would stringify them to '' which coerces to 0.
+		$data = array_filter( $data, static function ( $v ) {
+			return null !== $v;
+		} );
+
 		// INSERT IGNORE so duplicate dedup_key silently no-ops.
 		$columns      = implode( ', ', array_map( array( __CLASS__, 'ident' ), array_keys( $data ) ) );
 		$placeholders = implode( ', ', array_fill( 0, count( $data ), '%s' ) );

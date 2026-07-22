@@ -16,6 +16,7 @@ class STM_Plugin {
 	/** @var STM_Voys_Import */     private $import;
 	/** @var STM_Cron */            private $cron;
 	/** @var STM_Admin_Dashboard */ private $dashboard;
+	/** @var STM_Trends */          private $trends;
 
 	public static function instance() {
 		if ( null === self::$instance ) {
@@ -30,6 +31,7 @@ class STM_Plugin {
 		$this->import    = new STM_Voys_Import();
 		$this->cron      = new STM_Cron();
 		$this->dashboard = new STM_Admin_Dashboard();
+		$this->trends    = new STM_Trends();
 	}
 
 	public function run() {
@@ -64,6 +66,7 @@ class STM_Plugin {
 			58
 		);
 		add_submenu_page( STM_SLUG, __( 'Dashboard', 'stralend-team-monitor' ), __( 'Dashboard', 'stralend-team-monitor' ), $cap, STM_SLUG, array( $this->dashboard, 'render_page' ) );
+		add_submenu_page( STM_SLUG, __( 'Trends', 'stralend-team-monitor' ), __( 'Trends', 'stralend-team-monitor' ), $cap, 'stm-trends', array( $this->trends, 'render_page' ) );
 		add_submenu_page( STM_SLUG, __( 'Voys-import', 'stralend-team-monitor' ), __( 'Voys-import', 'stralend-team-monitor' ), $cap, 'stm-import', array( $this->import, 'render_page' ) );
 		add_submenu_page( STM_SLUG, __( 'Instellingen', 'stralend-team-monitor' ), __( 'Instellingen', 'stralend-team-monitor' ), $cap, 'stm-settings', array( $this->settings, 'render_page' ) );
 	}
@@ -81,6 +84,7 @@ class STM_Plugin {
 			update_option( 'stm_db_version', STM_DB_VERSION );
 		}
 		$this->maybe_purge_epoch_rows();
+		$this->maybe_null_repair();
 	}
 
 	/**
@@ -98,5 +102,23 @@ class STM_Plugin {
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$wpdb->query( "DELETE FROM {$table} WHERE source = 'hubspot' AND event_date < '2000-01-01'" );
 		update_option( 'stm_epoch_purge_done', 1 );
+	}
+
+	/**
+	 * One-time repair: NULLs were stringified to '' on insert and coerced to 0,
+	 * so csat/is_fcr read as real zeroes. None of the current sources supplies
+	 * these fields, so resetting their zeroes to NULL is safe.
+	 */
+	private function maybe_null_repair() {
+		if ( get_option( 'stm_null_repair_done' ) ) {
+			return;
+		}
+		global $wpdb;
+		$table = STM_DB::table();
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$wpdb->query( "UPDATE {$table} SET csat = NULL WHERE csat = 0" );
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$wpdb->query( "UPDATE {$table} SET is_fcr = NULL WHERE is_fcr = 0" );
+		update_option( 'stm_null_repair_done', 1 );
 	}
 }
