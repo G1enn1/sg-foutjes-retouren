@@ -50,3 +50,7 @@
 
 .stm-table-details { margin: 8px 0 4px; max-width: 980px; }
 .stm-table-details summary { cursor: pointer; color: #52514e; }
+
+.stm-subhead { margin: 14px 0 6px; font-size: 13px; }
+.stm-distbar { display: flex; gap: 2px; height: 22px; max-width: 720px; border-radius: 6px; overflow: hidden; }
+.stm-distbar span { display: block; height: 100%; }

@@ -165,7 +165,15 @@ class STM_Trends {
 			'answered_same_day' => 0,
 			'response_hours'    => array(),
 			'per_day'           => array(),
+			// Disjoint distribution of threaded inbound mail:
+			'dist_1h'           => 0, // first reply within an hour
+			'dist_same_day'     => 0, // same day, but later than an hour
+			'dist_later'        => 0, // answered on a later day
+			'dist_unanswered'   => 0, // no reply found (yet)
+			'backlog_2d'        => 0, // unanswered AND older than 2 days
 		);
+		$backlog_cutoff = gmdate( 'Y-m-d', strtotime( current_time( 'Y-m-d' ) . ' -2 days' ) );
+
 		foreach ( $rows as $r ) {
 			if ( 'inbound' !== $r['direction'] || $r['event_date'] > $to ) {
 				continue;
@@ -177,24 +185,39 @@ class STM_Trends {
 			$stats['inbound']++;
 			$stats['per_day'][ $day ]['inbound']++;
 
-			if ( empty( $r['thread_id'] ) || empty( $out_by_thread[ $r['thread_id'] ] ) ) {
-				if ( ! empty( $r['thread_id'] ) ) {
-					$stats['inbound_threaded']++;
-				}
+			if ( empty( $r['thread_id'] ) ) {
 				continue;
 			}
 			$stats['inbound_threaded']++;
-			$in_ts = strtotime( $r['event_ts'] );
-			foreach ( $out_by_thread[ $r['thread_id'] ] as $out_ts_raw ) {
+
+			$in_ts    = strtotime( $r['event_ts'] );
+			$answered = false;
+			foreach ( (array) ( $out_by_thread[ $r['thread_id'] ] ?? array() ) as $out_ts_raw ) {
 				$out_ts = strtotime( $out_ts_raw );
 				if ( $out_ts >= $in_ts ) {
+					$answered = true;
+					$hours    = ( $out_ts - $in_ts ) / HOUR_IN_SECONDS;
+					$same     = ( substr( $out_ts_raw, 0, 10 ) === $day );
 					$stats['answered']++;
-					$stats['response_hours'][] = ( $out_ts - $in_ts ) / HOUR_IN_SECONDS;
-					if ( substr( $out_ts_raw, 0, 10 ) === $day ) {
+					$stats['response_hours'][] = $hours;
+					if ( $same ) {
 						$stats['answered_same_day']++;
 						$stats['per_day'][ $day ]['same_day']++;
 					}
+					if ( $hours <= 1 ) {
+						$stats['dist_1h']++;
+					} elseif ( $same ) {
+						$stats['dist_same_day']++;
+					} else {
+						$stats['dist_later']++;
+					}
 					break;
+				}
+			}
+			if ( ! $answered ) {
+				$stats['dist_unanswered']++;
+				if ( $day <= $backlog_cutoff ) {
+					$stats['backlog_2d']++;
 				}
 			}
 		}
@@ -309,6 +332,7 @@ class STM_Trends {
 			<?php
 			$this->render_kpis( $to );
 			$this->render_team_section( $from, $to, $bucket );
+			$this->render_orders_section( $from, $to, $bucket );
 			$this->render_response_section( $from, $to, $bucket );
 			$this->render_employee_section( $from, $to, $emp, $emp_ids, $cmp_raw );
 			$this->render_heatmap_section( $from, $to, ( 'emp' === $hm ) ? $emp : '', ( 'emp' === $hm && isset( $emp_ids[ $emp ] ) ) ? $emp_ids[ $emp ] : '' );
@@ -357,7 +381,33 @@ class STM_Trends {
 				? __( 'nog geen data van vorig jaar (vul historie aan)', 'stralend-team-monitor' )
 				: sprintf( __( 'zelfde week vorig jaar: %s', 'stralend-team-monitor' ), number_format_i18n( $last_year['total'] ) )
 		);
+		$missed = $this->missed_calls( $monday, $today );
+		if ( null !== $missed ) {
+			$this->tile(
+				__( 'Onbeantwoorde oproepen (indicatie)', 'stralend-team-monitor' ),
+				number_format_i18n( $missed ),
+				__( 'inkomend met 0 sec gespreksduur, deze week', 'stralend-team-monitor' )
+			);
+		}
 		echo '</div>';
+	}
+
+	/**
+	 * Missed-call indicator: inbound calls with zero talk time. Returns null
+	 * when the window has no call data at all (metric would be meaningless).
+	 */
+	private function missed_calls( $from, $to ) {
+		global $wpdb;
+		$table = STM_DB::table();
+		$sql   = "SELECT COUNT(*) AS calls,
+			SUM(CASE WHEN direction = 'inbound' AND duration_seconds = 0 THEN 1 ELSE 0 END) AS missed
+			FROM {$table} WHERE channel = 'call' AND event_date BETWEEN %s AND %s";
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$r = $wpdb->get_row( $wpdb->prepare( $sql, array( $from, $to ) ), ARRAY_A );
+		if ( ! $r || 0 === (int) $r['calls'] ) {
+			return null;
+		}
+		return (int) $r['missed'];
 	}
 
 	private function tile( $label, $value, $sub ) {
@@ -419,6 +469,83 @@ class STM_Trends {
 		$this->series_table( __( 'Tabel: team per periode', 'stralend-team-monitor' ), $cur['labels'], $series );
 	}
 
+	/**
+	 * WooCommerce orders vs contact pressure. Answers the CEO question: is it
+	 * busier because we sell more, or does each order need more contact?
+	 * Hidden when WooCommerce is absent or the window has no orders.
+	 */
+	private function render_orders_section( $from, $to, $bucket ) {
+		if ( ! class_exists( 'STM_Woo' ) || ! STM_Woo::available() ) {
+			return;
+		}
+		$per_day = STM_Woo::orders_per_day( $from, $to );
+		if ( empty( $per_day ) ) {
+			return;
+		}
+
+		// Roll orders up into the page's buckets.
+		$keys   = array_keys( $this->buckets( $from, $to, $bucket ) );
+		$pos    = array_flip( $keys );
+		$labels = array_values( $this->buckets( $from, $to, $bucket ) );
+		$orders = array_fill( 0, count( $keys ), 0 );
+		foreach ( $per_day as $day => $c ) {
+			$dt  = new DateTime( $day );
+			$key = ( 'week' === $bucket ) ? $dt->format( 'o' ) . $dt->format( 'W' ) : $day;
+			if ( isset( $pos[ $key ] ) ) {
+				$orders[ $pos[ $key ] ] += $c;
+			}
+		}
+
+		$team  = $this->series( $from, $to, $bucket );
+		$ratio = array();
+		foreach ( $orders as $i => $n ) {
+			$ratio[] = $n > 0 ? round( $team['total'][ $i ] / $n, 2 ) : 0;
+		}
+
+		$orders_total = array_sum( $orders );
+		$inter_total  = array_sum( $team['total'] );
+		$ratio_total  = $orders_total > 0 ? round( $inter_total / $orders_total, 2 ) : null;
+
+		// Same numbers for the previous window, for the delta tiles.
+		$len     = ( strtotime( $to ) - strtotime( $from ) ) / DAY_IN_SECONDS;
+		$pv_to   = gmdate( 'Y-m-d', strtotime( $from . ' -1 day' ) );
+		$pv_from = gmdate( 'Y-m-d', strtotime( $pv_to . ' -' . $len . ' days' ) );
+		$pv_orders = STM_Woo::count( $pv_from, $pv_to );
+		$pv_team   = $this->totals( $pv_from, $pv_to );
+		$pv_ratio  = $pv_orders > 0 ? $pv_team['total'] / $pv_orders : null;
+
+		echo '<h2>' . esc_html__( 'Bestellingen & contactdruk', 'stralend-team-monitor' ) . '</h2>';
+		echo '<div class="stm-tiles">';
+		$d_orders = self::pct_delta( $orders_total, $pv_orders );
+		$this->tile(
+			__( 'Bestellingen', 'stralend-team-monitor' ),
+			number_format_i18n( $orders_total ),
+			( null === $d_orders ) ? __( 'in de gekozen periode', 'stralend-team-monitor' ) : sprintf( __( '%s t.o.v. vorige periode', 'stralend-team-monitor' ), $this->delta_text( $d_orders ) )
+		);
+		$d_ratio = ( null !== $ratio_total && null !== $pv_ratio && $pv_ratio > 0 ) ? (int) round( ( $ratio_total - $pv_ratio ) / $pv_ratio * 100 ) : null;
+		$this->tile(
+			__( 'Contactmomenten per bestelling', 'stralend-team-monitor' ),
+			( null === $ratio_total ) ? '—' : number_format_i18n( $ratio_total, 2 ),
+			( null === $d_ratio )
+				? __( 'e-mails uit + telefoontjes, gedeeld door bestellingen', 'stralend-team-monitor' )
+				: sprintf( __( '%s t.o.v. vorige periode — stijgt dit, dan kost elke bestelling meer werk', 'stralend-team-monitor' ), $this->delta_text( $d_ratio ) )
+		);
+		echo '</div>';
+
+		echo '<div class="stm-grid">';
+		echo '<div><h3 class="stm-subhead">' . esc_html__( 'Bestellingen', 'stralend-team-monitor' ) . '</h3>';
+		$this->line_chart( $labels, array( array( 'label' => __( 'bestellingen', 'stralend-team-monitor' ), 'color' => self::C_A, 'values' => $orders ) ), 480, 180 );
+		echo '</div><div><h3 class="stm-subhead">' . esc_html__( 'Contactmomenten per bestelling', 'stralend-team-monitor' ) . '</h3>';
+		$this->line_chart( $labels, array( array( 'label' => __( 'per bestelling', 'stralend-team-monitor' ), 'color' => self::C_B, 'values' => $ratio ) ), 480, 180 );
+		echo '</div></div>';
+
+		$this->series_table( __( 'Tabel: bestellingen & contactdruk', 'stralend-team-monitor' ), $labels, array(
+			array( 'label' => __( 'bestellingen', 'stralend-team-monitor' ), 'values' => $orders ),
+			array( 'label' => __( 'interacties', 'stralend-team-monitor' ), 'values' => $team['total'] ),
+			array( 'label' => __( 'per bestelling', 'stralend-team-monitor' ), 'values' => $ratio ),
+		) );
+	}
+
 	/** Inbound email volume + same-day answers (team). */
 	private function render_response_section( $from, $to, $bucket ) {
 		$stats = $this->response_stats( $from, $to );
@@ -446,7 +573,16 @@ class STM_Trends {
 			( null === $avg_h ) ? '—' : ( ( $avg_h < 1 ) ? round( $avg_h * 60 ) . ' min' : number_format_i18n( $avg_h, 1 ) . ' uur' ),
 			__( 'van binnenkomst tot eerste antwoord in dezelfde thread', 'stralend-team-monitor' )
 		);
+		if ( $stats['inbound_threaded'] > 0 ) {
+			$this->tile(
+				__( 'Onbeantwoord (>2 dagen)', 'stralend-team-monitor' ),
+				number_format_i18n( $stats['backlog_2d'] ),
+				__( 'binnengekomen mails zonder antwoord, ouder dan 2 dagen', 'stralend-team-monitor' )
+			);
+		}
 		echo '</div>';
+
+		$this->render_response_distribution( $stats );
 
 		// Roll the per-day pairs up into the page's buckets.
 		$labels   = array();
@@ -475,6 +611,40 @@ class STM_Trends {
 		$this->legend( $series );
 		$this->line_chart( $labels, $series, 720, 240 );
 		$this->series_table( __( 'Tabel: binnengekomen vs zelfde dag beantwoord', 'stralend-team-monitor' ), $labels, $series );
+	}
+
+	/**
+	 * Response-time distribution as a segmented part-to-whole bar.
+	 * Ordinal blue ramp for the answered buckets, neutral gray for unanswered.
+	 */
+	private function render_response_distribution( $stats ) {
+		$total = $stats['dist_1h'] + $stats['dist_same_day'] + $stats['dist_later'] + $stats['dist_unanswered'];
+		if ( $total < 5 ) {
+			return; // too little threaded mail for a meaningful split
+		}
+		$segments = array(
+			array( __( 'binnen 1 uur', 'stralend-team-monitor' ), $stats['dist_1h'], '#86b6ef' ),
+			array( __( 'zelfde dag', 'stralend-team-monitor' ), $stats['dist_same_day'], '#3987e5' ),
+			array( __( 'later', 'stralend-team-monitor' ), $stats['dist_later'], '#1c5cab' ),
+			array( __( 'onbeantwoord', 'stralend-team-monitor' ), $stats['dist_unanswered'], '#c3c2b7' ),
+		);
+		echo '<h3 class="stm-subhead">' . esc_html__( 'Hoe snel wordt beantwoord?', 'stralend-team-monitor' ) . '</h3>';
+		echo '<div class="stm-distbar" role="img" aria-label="' . esc_attr__( 'Verdeling reactietijd', 'stralend-team-monitor' ) . '">';
+		foreach ( $segments as $seg ) {
+			if ( $seg[1] <= 0 ) {
+				continue;
+			}
+			$pct = $seg[1] / $total * 100;
+			$tip = sprintf( '%s: %s (%s%%)', $seg[0], number_format_i18n( $seg[1] ), round( $pct ) );
+			echo '<span style="width:' . esc_attr( round( $pct, 2 ) ) . '%;background:' . esc_attr( $seg[2] ) . '" title="' . esc_attr( $tip ) . '"></span>';
+		}
+		echo '</div>';
+		echo '<p class="stm-legend">';
+		foreach ( $segments as $seg ) {
+			$pct = round( $seg[1] / $total * 100 );
+			echo '<span class="stm-legend-item"><span class="stm-chip" style="background:' . esc_attr( $seg[2] ) . '"></span>' . esc_html( $seg[0] . ' ' . $pct . '%' ) . '</span>';
+		}
+		echo '</p>';
 	}
 
 	/** Per-employee weekly small multiples with comparison. */
@@ -513,6 +683,15 @@ class STM_Trends {
 		}
 
 		echo '<h2>' . esc_html( sprintf( __( 'Verloop per week — %s', 'stralend-team-monitor' ), $a_name ) ) . '</h2>';
+		$mix = '';
+		if ( $a_tot['total'] > 0 ) {
+			$mix = sprintf(
+				/* translators: 1: email share, 2: phone share */
+				__( ' Kanaalbalans: %1$d%% e-mail / %2$d%% telefoon.', 'stralend-team-monitor' ),
+				(int) round( $a_tot['emails'] / $a_tot['total'] * 100 ),
+				(int) round( $a_tot['calls'] / $a_tot['total'] * 100 )
+			);
+		}
 		echo '<p class="description">' . esc_html( sprintf(
 			__( 'Totaal deze periode: %1$s e-mails, %2$s telefoontjes, %3$s belminuten — gem. %4$s interacties per actieve dag (%5$d dagen actief).', 'stralend-team-monitor' ),
 			number_format_i18n( $a_tot['emails'] ),
@@ -520,7 +699,7 @@ class STM_Trends {
 			number_format_i18n( $a_tot['minutes'] ),
 			$a_tot['active_days'] ? number_format_i18n( round( $a_tot['total'] / $a_tot['active_days'], 1 ) ) : '0',
 			$a_tot['active_days']
-		) ) . '</p>';
+		) . $mix ) . '</p>';
 
 		$metrics = array(
 			'emails'  => __( 'E-mails verzonden', 'stralend-team-monitor' ),

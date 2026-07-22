@@ -67,6 +67,26 @@ Beheer de lijst onder **Team Monitor → Instellingen → Toegang**. Raakt de li
 per ongeluk leeg, dan mogen beheerders er weer in om het opnieuw in te stellen
 (geen lock-out).
 
+## Trends-pagina (v0.3)
+
+Naast het dashboard is er **Team Monitor → Trends** met:
+
+- **KPI-tegels**: deze week vs vorige week (t/m dezelfde weekdag) vs vorig jaar,
+  plus een indicatie van onbeantwoorde oproepen (inkomend, 0 sec gespreksduur).
+- **Team-drukte**: interacties door de tijd, met overlay van vorig jaar of de
+  vorige periode.
+- **Bestellingen & contactdruk** (vereist WooCommerce, werkt met HPOS én
+  klassieke opslag): bestellingen per periode en *contactmomenten per
+  bestelling*. Stijgt die ratio, dan kost elke bestelling meer werk — een
+  proces-signaal, geen drukte-signaal.
+- **E-mail-respons**: binnengekomen mails, % zelfde dag beantwoord, gemiddelde
+  eerste reactietijd, achterstand (onbeantwoord >2 dagen) en een verdeling
+  (binnen 1 uur / zelfde dag / later / onbeantwoord). Gebaseerd op
+  HubSpot-threads; de dekking wordt eerlijk vermeld.
+- **Verloop per medewerker**: weekgrafieken, vergelijkbaar met een collega of
+  met zichzelf (vorige periode / vorig jaar), incl. kanaalbalans e-mail/telefoon.
+- **Drukte-patroon**: heatmap weekdag × uur.
+
 ## Het dashboard
 
 **Team Monitor** (hoofdmenu) toont voor een gekozen periode:
