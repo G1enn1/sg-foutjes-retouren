@@ -699,9 +699,10 @@ class STM_Trends {
 			return $mt + $ih - ( $v / $vmax * $ih );
 		};
 
-		// Explicit width/height + inline max-width so the chart keeps a sane
-		// size even when the stylesheet is stale (aggressive page caching).
-		$svg = '<svg class="stm-chart" viewBox="0 0 ' . (int) $w . ' ' . (int) $h . '" width="' . (int) $w . '" height="' . (int) $h . '" style="max-width:100%;height:auto" role="img" preserveAspectRatio="xMidYMid meet">';
+		// The full sizing lives inline: width 100% of the container but hard-capped
+		// at the design width. Inline max-width beats any (possibly stale-cached)
+		// stylesheet rule, so charts can never blow up to viewport size again.
+		$svg = '<svg class="stm-chart" viewBox="0 0 ' . (int) $w . ' ' . (int) $h . '" width="' . (int) $w . '" height="' . (int) $h . '" style="display:block;width:100%;max-width:' . (int) $w . 'px;height:auto" role="img" preserveAspectRatio="xMidYMid meet">';
 
 		// gridlines + y ticks (4 steps, one axis).
 		for ( $t = 0; $t <= 4; $t++ ) {

@@ -3,7 +3,7 @@
  * Plugin Name:       Stralend Team Monitor
  * Plugin URI:        https://stralendgroen.nl/
  * Description:        E-mail- (HubSpot) en telefoonstatistieken (Voys Freedom) per medewerker per dag, met moeilijkheids- en progressie-inzichten. Dashboard in wp-admin.
- * Version:           0.2.0
+ * Version:           0.2.1
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Stralend Groen
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit; // No direct access.
 }
 
-define( 'STM_VERSION', '0.2.0' );
+define( 'STM_VERSION', '0.2.1' );
 define( 'STM_DB_VERSION', '2' );
 define( 'STM_FILE', __FILE__ );
 define( 'STM_PATH', plugin_dir_path( __FILE__ ) );

@@ -34,7 +34,8 @@
 .stm-legend-item { margin-right: 16px; }
 .stm-chip { display: inline-block; width: 10px; height: 10px; border-radius: 5px; margin-right: 6px; vertical-align: baseline; }
 
-.stm-chart { display: block; width: 100%; max-width: 980px; height: auto; background: #fcfcfb; border: 1px solid #dcdcde; border-radius: 8px; }
+/* Sizing is enforced inline on the SVG itself; the stylesheet only decorates. */
+.stm-chart { background: #fcfcfb; border: 1px solid #dcdcde; border-radius: 8px; }
 .stm-chart .stm-tick { font: 11px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #898781; }
 .stm-chart .stm-hit:hover { fill: rgba(11, 11, 11, 0.05); }
 
