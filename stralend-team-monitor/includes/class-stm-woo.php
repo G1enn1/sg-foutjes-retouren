@@ -50,18 +50,21 @@ class STM_Woo {
 		}
 		$in = "'" . implode( "','", array_map( 'esc_sql', self::STATUSES ) ) . "'";
 
+		// Range predicates on the raw column (not DATE(col)) so the date index
+		// is usable — wp_posts on a shop is large and a full scan is what slow
+		// pages are made of.
 		if ( 'hpos' === $storage ) {
 			$table = $wpdb->prefix . 'wc_orders';
 			$sql   = "SELECT DATE(date_created_gmt) d, COUNT(*) c FROM {$table}
 				WHERE type = 'shop_order' AND status IN ({$in})
-				AND DATE(date_created_gmt) BETWEEN %s AND %s GROUP BY d";
+				AND date_created_gmt >= %s AND date_created_gmt <= %s GROUP BY d";
 		} else {
 			$sql = "SELECT DATE(post_date) d, COUNT(*) c FROM {$wpdb->posts}
 				WHERE post_type = 'shop_order' AND post_status IN ({$in})
-				AND DATE(post_date) BETWEEN %s AND %s GROUP BY d";
+				AND post_date >= %s AND post_date <= %s GROUP BY d";
 		}
 		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		$rows = $wpdb->get_results( $wpdb->prepare( $sql, array( $from, $to ) ), ARRAY_A );
+		$rows = $wpdb->get_results( $wpdb->prepare( $sql, array( $from . ' 00:00:00', $to . ' 23:59:59' ) ), ARRAY_A );
 		$out  = array();
 		foreach ( $rows as $r ) {
 			$out[ $r['d'] ] = (int) $r['c'];

@@ -26,20 +26,51 @@ class STM_Admin_Dashboard {
 	public function action_sync_hubspot() {
 		$this->guard( 'stm_sync_hubspot' );
 		list( $start, $end ) = $this->range_from_referer();
-		$result = ( new STM_HubSpot() )->sync_emails( $start, $end );
-		$wa     = ( new STM_WhatsApp() )->sync( $start, $end );
 
+		// Hard wall-clock budget: a web request must return long before the
+		// server/CDN gateway timeout. Partial progress is saved and the notice
+		// tells the user to click again — dedup makes every re-run safe.
+		$deadline = time() + 20;
+
+		// Resume an interrupted email sync where it left off.
+		$resume = get_option( 'stm_email_resume' );
+		if ( is_array( $resume ) && ! empty( $resume['start'] ) ) {
+			$start = $resume['start'];
+			$end   = ( ! empty( $resume['end'] ) && $resume['end'] > $end ) ? $resume['end'] : $end;
+		}
+
+		$result = ( new STM_HubSpot() )->sync_emails( $start, $end, $deadline );
 		if ( isset( $result['error'] ) ) {
 			$this->redirect_with_notice( array( 'e' => $result['error'] ) );
 		}
+
 		$msg = sprintf( '%d e-mails opgehaald, %d nieuw opgeslagen.', $result['fetched'] ?? 0, $result['inserted'] ?? 0 );
+		if ( ! empty( $result['partial'] ) ) {
+			update_option( 'stm_email_resume', array(
+				'start' => ! empty( $result['last_day'] ) ? $result['last_day'] : $start,
+				'end'   => $end,
+			), false );
+			$msg .= ' ' . __( 'Nog niet klaar — klik nogmaals op synchroniseren om verder te gaan (er telt niets dubbel).', 'stralend-team-monitor' );
+			$this->redirect_with_notice( array( 'm' => $msg ) );
+		}
+		delete_option( 'stm_email_resume' );
+
+		if ( time() >= $deadline ) {
+			$msg .= ' ' . __( 'WhatsApp overgeslagen (tijdslimiet) — klik nogmaals.', 'stralend-team-monitor' );
+			$this->redirect_with_notice( array( 'm' => $msg ) );
+		}
+
+		$wa = ( new STM_WhatsApp() )->sync( $start, $end, $deadline );
 		if ( isset( $wa['error'] ) ) {
 			$msg .= ' ' . sprintf( 'WhatsApp: %s', $wa['error'] );
 			if ( isset( $wa['hint'] ) ) {
 				$msg .= ' (' . $wa['hint'] . ')';
 			}
 		} else {
-			$msg .= ' ' . sprintf( 'WhatsApp: %d sessies, %d appjes, %d nieuw.', $wa['threads'] ?? 0, $wa['messages'] ?? 0, $wa['inserted'] ?? 0 );
+			$msg .= ' ' . sprintf( 'WhatsApp: %d gesprekken bijgewerkt, %d appjes, %d nieuw.', $wa['threads'] ?? 0, $wa['messages'] ?? 0, $wa['inserted'] ?? 0 );
+			if ( ! empty( $wa['partial'] ) ) {
+				$msg .= ' ' . __( 'Nog niet klaar — klik nogmaals om verder te gaan.', 'stralend-team-monitor' );
+			}
 		}
 		$this->redirect_with_notice( array( 'm' => $msg ) );
 	}

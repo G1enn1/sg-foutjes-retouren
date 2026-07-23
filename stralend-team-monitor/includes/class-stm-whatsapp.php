@@ -31,9 +31,15 @@ class STM_WhatsApp {
 	/**
 	 * Sync WhatsApp messages whose thread saw activity in [start, end].
 	 *
-	 * @return array { inserted, threads, messages, error?, hint? }
+	 * Incremental: threads whose latestMessageTimestamp is unchanged since the
+	 * previous run are skipped, so re-runs only pay for threads with new
+	 * activity. A deadline (unix time, 0 = unlimited) caps wall-clock so a web
+	 * request can never run into a gateway timeout; on reaching it the result
+	 * carries partial=true and the caller simply runs sync again later.
+	 *
+	 * @return array { inserted, threads, messages, partial?, error?, hint? }
 	 */
-	public function sync( $start, $end ) {
+	public function sync( $start, $end, $deadline = 0 ) {
 		$actor_map = $this->actor_map();
 		if ( empty( $actor_map ) ) {
 			return array( 'error' => __( 'Geen medewerkers te koppelen (owner-ids eerst koppelen).', 'stralend-team-monitor' ) );
@@ -53,18 +59,26 @@ class STM_WhatsApp {
 
 		$after_iso = gmdate( 'Y-m-d\TH:i:s\Z', strtotime( get_gmt_from_date( $start . ' 00:00:00' ) . ' UTC' ) );
 
+		$state    = get_option( 'stm_wa_thread_state', array() );
+		$state    = is_array( $state ) ? $state : array();
 		$inserted = 0;
 		$threads  = 0;
 		$messages = 0;
 		$after    = null;
 		$guard    = 0;
+		$partial  = false;
 
 		do {
+			if ( $deadline && time() >= $deadline ) {
+				$partial = true;
+				break;
+			}
 			$path = '/conversations/v3/conversations/threads?limit=100&sort=latestMessageTimestamp'
 				. '&latestMessageTimestampAfter=' . rawurlencode( $after_iso )
 				. ( $after ? '&after=' . rawurlencode( $after ) : '' );
 			$data = $this->hs->get_json_api( $path );
 			if ( is_wp_error( $data ) ) {
+				$this->save_state( $state );
 				return array( 'error' => $data->get_error_message(), 'inserted' => $inserted, 'threads' => $threads, 'messages' => $messages );
 			}
 
@@ -73,19 +87,44 @@ class STM_WhatsApp {
 				if ( ! in_array( $channel, $wa_channels, true ) ) {
 					continue;
 				}
+				$tid = (string) $thread['id'];
+				$lts = (string) ( $thread['latestMessageTimestamp'] ?? '' );
+				if ( '' !== $lts && isset( $state[ $tid ] ) && $state[ $tid ] === $lts ) {
+					continue; // unchanged since last sync — nothing new to fetch
+				}
+				if ( $deadline && time() >= $deadline ) {
+					$partial = true;
+					break 2;
+				}
 				$threads++;
-				$tid      = (string) $thread['id'];
 				$assigned = (string) ( $thread['assignedTo'] ?? '' );
 				$r        = $this->sync_thread( $tid, $assigned, $wa_channels, $actor_map, $start, $end );
 				$inserted += $r['inserted'];
 				$messages += $r['messages'];
+				if ( '' !== $lts && empty( $r['failed'] ) ) {
+					$state[ $tid ] = $lts;
+				}
 				usleep( 150000 ); // stay well under the API rate limits
 			}
 			$after = $data['paging']['next']['after'] ?? null;
 			$guard++;
 		} while ( $after && $guard < 100 );
 
-		return array( 'inserted' => $inserted, 'threads' => $threads, 'messages' => $messages );
+		$this->save_state( $state );
+
+		$out = array( 'inserted' => $inserted, 'threads' => $threads, 'messages' => $messages );
+		if ( $partial ) {
+			$out['partial'] = true;
+		}
+		return $out;
+	}
+
+	/** Persist the per-thread sync state, bounded so the option cannot grow unbounded. */
+	private function save_state( array $state ) {
+		if ( count( $state ) > 800 ) {
+			$state = array_slice( $state, -600, null, true );
+		}
+		update_option( 'stm_wa_thread_state', $state, false );
 	}
 
 	/** Store the messages of one thread. */
@@ -94,12 +133,14 @@ class STM_WhatsApp {
 		$messages = 0;
 		$after    = null;
 		$guard    = 0;
+		$failed   = false;
 		do {
 			$path = '/conversations/v3/conversations/threads/' . rawurlencode( $tid ) . '/messages?limit=100'
 				. ( $after ? '&after=' . rawurlencode( $after ) : '' );
 			$data = $this->hs->get_json_api( $path );
 			if ( is_wp_error( $data ) ) {
-				break; // partial thread is fine; dedup makes the retry safe
+				$failed = true; // don't mark the thread as synced; retry next run
+				break;
 			}
 			foreach ( (array) ( $data['results'] ?? array() ) as $m ) {
 				if ( 'MESSAGE' !== (string) ( $m['type'] ?? '' ) ) {
@@ -146,7 +187,7 @@ class STM_WhatsApp {
 			$guard++;
 		} while ( $after && $guard < 20 );
 
-		return array( 'inserted' => $inserted, 'messages' => $messages );
+		return array( 'inserted' => $inserted, 'messages' => $messages, 'failed' => $failed );
 	}
 
 	/**

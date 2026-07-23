@@ -22,8 +22,10 @@ class STM_Cron {
 		$end   = current_time( 'Y-m-d' );
 		$start = gmdate( 'Y-m-d', strtotime( $end . ' -3 days' ) );
 
-		$result = ( new STM_HubSpot() )->sync_emails( $start, $end );
-		$wa     = ( new STM_WhatsApp() )->sync( $start, $end );
+		// Background run, but still bounded: WP-cron often piggybacks on a
+		// visitor request, so it must not run for minutes either.
+		$result = ( new STM_HubSpot() )->sync_emails( $start, $end, time() + 90 );
+		$wa     = ( new STM_WhatsApp() )->sync( $start, $end, time() + 180 );
 		update_option( 'stm_last_sync', array(
 			'time'   => current_time( 'mysql' ),
 			'result' => $result,

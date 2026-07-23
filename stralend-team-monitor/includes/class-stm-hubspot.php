@@ -35,9 +35,13 @@ class STM_HubSpot {
 	/**
 	 * Fetch email engagements in [start,end] (Y-m-d) and store them.
 	 *
-	 * @return array { inserted, fetched, error? }
+	 * @param int $deadline Unix time to stop at (0 = no limit). On reaching it
+	 *                      the result carries partial=true and last_day, so the
+	 *                      caller can resume from there — long-running syncs
+	 *                      must never block a web request into a gateway timeout.
+	 * @return array { inserted, fetched, partial?, last_day?, error? }
 	 */
-	public function sync_emails( $start, $end ) {
+	public function sync_emails( $start, $end, $deadline = 0 ) {
 		if ( ! $this->ok() ) {
 			return array( 'error' => 'no_token' );
 		}
@@ -50,8 +54,12 @@ class STM_HubSpot {
 		$inserted  = 0;
 		$fetched   = 0;
 		$guard     = 0;
+		$last_day  = '';
 
 		do {
+			if ( $deadline && time() >= $deadline ) {
+				return array( 'inserted' => $inserted, 'fetched' => $fetched, 'partial' => true, 'last_day' => $last_day );
+			}
 			$body = array(
 				'filterGroups' => array( array( 'filters' => array( array(
 					'propertyName' => 'hs_timestamp',
@@ -97,6 +105,7 @@ class STM_HubSpot {
 				$dir_raw   = strtoupper( (string) ( $props['hs_email_direction'] ?? '' ) );
 				$direction = ( false !== strpos( $dir_raw, 'INCOMING' ) ) ? 'inbound' : 'outbound';
 				$ts        = $this->parse_hs_timestamp( $props['hs_timestamp'] ?? '' );
+				$last_day  = substr( $ts, 0, 10 );
 
 				$inserted += STM_DB::insert( array(
 					'event_ts'    => $ts,
