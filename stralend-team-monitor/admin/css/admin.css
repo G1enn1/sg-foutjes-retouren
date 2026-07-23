@@ -52,5 +52,10 @@
 .stm-table-details summary { cursor: pointer; color: #52514e; }
 
 .stm-subhead { margin: 14px 0 6px; font-size: 13px; }
+
+.stm-hours { white-space: nowrap; }
+.stm-hours label { display: inline-flex; flex-direction: column; align-items: center; margin-right: 4px; }
+.stm-hours label span { font-size: 10px; color: #898781; }
+.stm-hours input { width: 52px; }
 .stm-distbar { display: flex; gap: 2px; height: 22px; max-width: 720px; border-radius: 6px; overflow: hidden; }
 .stm-distbar span { display: block; height: 100%; }

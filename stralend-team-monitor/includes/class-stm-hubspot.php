@@ -139,6 +139,41 @@ class STM_HubSpot {
 	}
 
 	/**
+	 * GET a HubSpot API path. Handles 429 with Retry-After. Used by the
+	 * WhatsApp/Conversations sync as well.
+	 *
+	 * @return array|WP_Error Decoded JSON on 200.
+	 */
+	public function get_json_api( $path ) {
+		if ( ! $this->ok() ) {
+			return new WP_Error( 'stm_no_token', __( 'Geen HubSpot-token ingesteld.', 'stralend-team-monitor' ) );
+		}
+		$resp = null;
+		for ( $try = 1; $try <= 4; $try++ ) {
+			$resp = wp_remote_get( $this->base_url() . $path, array(
+				'headers' => array( 'Authorization' => 'Bearer ' . $this->token() ),
+				'timeout' => 30,
+			) );
+			if ( is_wp_error( $resp ) ) {
+				return $resp;
+			}
+			$code = (int) wp_remote_retrieve_response_code( $resp );
+			if ( 429 === $code && $try < 4 ) {
+				$wait = (int) wp_remote_retrieve_header( $resp, 'retry-after' );
+				sleep( min( max( 1, $wait ), 10 ) );
+				continue;
+			}
+			$data = json_decode( wp_remote_retrieve_body( $resp ), true );
+			if ( 200 !== $code ) {
+				$msg = isset( $data['message'] ) ? $data['message'] : ( 'HTTP ' . $code );
+				return new WP_Error( 'stm_http_' . $code, $msg );
+			}
+			return is_array( $data ) ? $data : array();
+		}
+		return new WP_Error( 'stm_rate_limited', __( 'HubSpot-limiet bereikt; probeer het later opnieuw.', 'stralend-team-monitor' ) );
+	}
+
+	/**
 	 * POST with 429 handling: honor Retry-After (capped) and retry a few times
 	 * before surfacing the rate-limit to the caller.
 	 */

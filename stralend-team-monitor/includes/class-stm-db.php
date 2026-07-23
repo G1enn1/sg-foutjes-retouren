@@ -110,21 +110,26 @@ class STM_DB {
 
 	/**
 	 * Deterministic dedup key so re-imports / duplicate webhook deliveries do not
-	 * double count. For calls we key on (ts, employee, duration); for emails on
-	 * the HubSpot object id when present, else (ts, employee, subjecthash).
+	 * double count. Calls are keyed on their observable identity (channel,
+	 * employee, timestamp, duration, direction) WITHOUT the source, so the same
+	 * call arriving via both the live webhook and a later CSV import stores only
+	 * once. Other channels key on the provider object id via dedup_seed.
 	 */
 	public static function dedup_key( array $row ) {
 		if ( ! empty( $row['dedup_seed'] ) ) {
 			$seed = $row['dedup_seed'];
 		} else {
-			$seed = implode( '|', array(
-				$row['source'],
+			$parts = array(
 				$row['channel'],
 				$row['employee_id'],
 				$row['event_ts'],
 				isset( $row['duration_seconds'] ) ? (int) $row['duration_seconds'] : '',
 				isset( $row['direction'] ) ? $row['direction'] : '',
-			) );
+			);
+			if ( 'call' !== $row['channel'] ) {
+				array_unshift( $parts, $row['source'] );
+			}
+			$seed = implode( '|', $parts );
 		}
 		return sha1( $seed );
 	}

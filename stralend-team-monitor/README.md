@@ -87,6 +87,31 @@ Naast het dashboard is er **Team Monitor → Trends** met:
   met zichzelf (vorige periode / vorig jaar), incl. kanaalbalans e-mail/telefoon.
 - **Drukte-patroon**: heatmap weekdag × uur.
 
+## WhatsApp (v0.4)
+
+Loopt jullie WhatsApp via de **HubSpot-inbox**, voeg dan de scope
+`conversations.read` toe aan de privé-app. De sync haalt daarna per
+WhatsApp-gesprek de berichten op: **appjes** (losse berichten, in/uit) en
+**sessies** (één gesprek = één klantvraag). In de volumetellingen telt een
+*sessie* als één interactie — een sessie is qua werk vergelijkbaar met één
+e-mail; de losse appjes zijn het detail. Toewijzing: uitgaande appjes aan de
+verzendende agent, inkomende aan de toegewezen agent van het gesprek.
+
+## Rooster & eerlijke vergelijking (v0.4)
+
+In **Instellingen → Medewerkers** kun je per medewerker het rooster invullen
+(uren per weekdag, ma t/m zo). De Trends-pagina toont dan per medewerker
+**interacties per gewerkt uur** — de eerlijkste maat om een deeltijder met een
+fulltimer te vergelijken.
+
+## Dedup over bronnen heen (v0.4)
+
+Gesprekken worden ontdubbeld op (medewerker, tijdstip, duur, richting),
+onafhankelijk van de bron. Hetzelfde gesprek dat via de webhook én een latere
+CSV-import binnenkomt, telt dus één keer. Een eenmalige opschoning bij de
+update herbouwt bestaande sleutels en verwijdert al dubbel opgeslagen
+gesprekken.
+
 ## Het dashboard
 
 **Team Monitor** (hoofdmenu) toont voor een gekozen periode:

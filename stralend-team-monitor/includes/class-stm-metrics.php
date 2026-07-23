@@ -102,6 +102,15 @@ class STM_Metrics {
 				} else {
 					$s['emails_received']++;
 				}
+			} elseif ( 'whatsapp' === $r['channel'] ) {
+				if ( 'outbound' === $r['direction'] ) {
+					$s['wa_sent']++;
+				} else {
+					$s['wa_received']++;
+				}
+				if ( ! empty( $r['thread_id'] ) ) {
+					$s['wa_threads'][ $r['thread_id'] ] = true;
+				}
 			} elseif ( 'call' === $r['channel'] ) {
 				$s['calls_handled']++;
 				$s['call_seconds'] += (int) $r['duration_seconds'];
@@ -146,6 +155,9 @@ class STM_Metrics {
 			'employee_name'   => $names[ $employee_id ] ?? $employee_id,
 			'emails_sent'     => 0,
 			'emails_received' => 0,
+			'wa_sent'         => 0,
+			'wa_received'     => 0,
+			'wa_threads'      => array(),
 			'calls_handled'   => 0,
 			'call_seconds'    => 0,
 			'inbound_calls'   => 0,
@@ -167,10 +179,11 @@ class STM_Metrics {
 			if ( ! isset( $totals[ $id ] ) ) {
 				$totals[ $id ] = self::empty_stat( '', $id, array( $id => $s['employee_name'] ) );
 			}
-			foreach ( array( 'emails_sent', 'emails_received', 'calls_handled', 'call_seconds',
-				'inbound_calls', 'outbound_calls', 'escalations', 'reopened', 'fcr', 'ticket_count' ) as $f ) {
+			foreach ( array( 'emails_sent', 'emails_received', 'wa_sent', 'wa_received', 'calls_handled',
+				'call_seconds', 'inbound_calls', 'outbound_calls', 'escalations', 'reopened', 'fcr', 'ticket_count' ) as $f ) {
 				$totals[ $id ][ $f ] += $s[ $f ];
 			}
+			$totals[ $id ]['wa_threads'] += $s['wa_threads']; // union of thread-id sets
 			foreach ( $s['categories'] as $c => $n ) {
 				$totals[ $id ]['categories'][ $c ] = ( $totals[ $id ]['categories'][ $c ] ?? 0 ) + $n;
 			}

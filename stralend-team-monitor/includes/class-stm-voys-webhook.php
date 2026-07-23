@@ -93,9 +93,9 @@ class STM_Voys_Webhook {
 		$duration = (int) round( (float) ( $p['duration'] ?? $p['talk_time'] ?? $p['duur'] ?? 0 ) );
 		$ts       = $this->parse_ts( $p['timestamp'] ?? $p['start'] ?? $p['datum'] ?? '' );
 
-		// Prefer a call id for dedup so repeated deliveries do not double count.
-		$call_id = (string) ( $p['call_id'] ?? $p['callid'] ?? $p['uniqueid'] ?? '' );
-
+		// No dedup_seed on purpose: calls use the unified source-agnostic key
+		// (channel|employee|ts|duration|direction), so the same call arriving via
+		// webhook AND a later CSV import — or a repeated delivery — stores once.
 		return array(
 			'event_ts'         => $ts,
 			'employee_id'      => $employee['id'],
@@ -103,7 +103,6 @@ class STM_Voys_Webhook {
 			'direction'        => $direction,
 			'duration_seconds' => $duration,
 			'source'           => 'voys_webhook',
-			'dedup_seed'       => '' !== $call_id ? 'voys_call_' . $call_id : '',
 		);
 	}
 

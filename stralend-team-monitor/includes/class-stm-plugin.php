@@ -85,6 +85,7 @@ class STM_Plugin {
 		}
 		$this->maybe_purge_epoch_rows();
 		$this->maybe_null_repair();
+		$this->maybe_unify_call_dedup();
 	}
 
 	/**
@@ -120,5 +121,30 @@ class STM_Plugin {
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$wpdb->query( "UPDATE {$table} SET is_fcr = NULL WHERE is_fcr = 0" );
 		update_option( 'stm_null_repair_done', 1 );
+	}
+
+	/**
+	 * One-time rebuild of call dedup keys to the unified source-agnostic
+	 * formula, so webhook- and import-sourced rows of the same call collapse.
+	 * SHA1(CONCAT(...)) mirrors STM_DB::dedup_key exactly; UPDATE IGNORE keeps
+	 * the old key on true duplicates (unique index collision), which the
+	 * follow-up DELETE then removes.
+	 */
+	private function maybe_unify_call_dedup() {
+		if ( get_option( 'stm_call_dedup_unified' ) ) {
+			return;
+		}
+		global $wpdb;
+		$table = STM_DB::table();
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$wpdb->query( "UPDATE IGNORE {$table}
+			SET dedup_key = SHA1(CONCAT('call|', employee_id, '|', event_ts, '|', duration_seconds, '|', direction))
+			WHERE channel = 'call'" );
+		// Rows whose key could not be rewritten are duplicates of a rewritten row.
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$wpdb->query( "DELETE FROM {$table}
+			WHERE channel = 'call'
+			AND dedup_key <> SHA1(CONCAT('call|', employee_id, '|', event_ts, '|', duration_seconds, '|', direction))" );
+		update_option( 'stm_call_dedup_unified', 1 );
 	}
 }

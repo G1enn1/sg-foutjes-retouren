@@ -74,6 +74,31 @@ class STM_Settings {
 		return is_array( $list ) ? $list : array();
 	}
 
+	/**
+	 * Scheduled (rooster) hours for one employee across a date range, summed
+	 * from the per-weekday hours in the settings. 0.0 when no rooster is set.
+	 */
+	public static function scheduled_hours( $employee_id, $from, $to ) {
+		$emp = null;
+		foreach ( self::employees() as $e ) {
+			if ( isset( $e['id'] ) && $e['id'] === $employee_id ) {
+				$emp = $e;
+				break;
+			}
+		}
+		if ( ! $emp || empty( $emp['hours'] ) || ! is_array( $emp['hours'] ) ) {
+			return 0.0;
+		}
+		$sum = 0.0;
+		$cur = new DateTime( $from );
+		$end = new DateTime( $to );
+		while ( $cur <= $end ) {
+			$sum += (float) ( $emp['hours'][ (int) $cur->format( 'N' ) - 1 ] ?? 0 );
+			$cur->modify( '+1 day' );
+		}
+		return $sum;
+	}
+
 	public static function category_weights() {
 		$w = get_option( 'stm_category_weights', array() );
 		return is_array( $w ) ? $w : array();
@@ -157,12 +182,19 @@ class STM_Settings {
 			if ( '' === $id ) {
 				$id = sanitize_key( strtolower( strtok( $name, ' ' ) ) . '_' . $ext );
 			}
+			// Rooster: contract hours per weekday (mon..sun), 0–24 in half hours.
+			$hours = array();
+			for ( $d = 0; $d < 7; $d++ ) {
+				$v         = isset( $row['hours'][ $d ] ) ? (float) str_replace( ',', '.', (string) $row['hours'][ $d ] ) : 0;
+				$hours[]   = max( 0, min( 24, round( $v * 2 ) / 2 ) );
+			}
 			$employees[] = array(
 				'id'               => $id,
 				'name'             => $name,
 				'email'            => sanitize_email( $row['email'] ?? '' ),
 				'ext'              => $ext,
 				'hubspot_owner_id' => preg_replace( '/\D/', '', $row['hubspot_owner_id'] ?? '' ),
+				'hours'            => $hours,
 			);
 		}
 		update_option( 'stm_employees', $employees );
@@ -228,9 +260,12 @@ class STM_Settings {
 						<th><?php esc_html_e( 'E-mail', 'stralend-team-monitor' ); ?></th>
 						<th style="width:90px"><?php esc_html_e( 'Toestel (2xx)', 'stralend-team-monitor' ); ?></th>
 						<th style="width:140px"><?php esc_html_e( 'HubSpot owner-id', 'stralend-team-monitor' ); ?></th>
+						<th><?php esc_html_e( 'Rooster: uren per dag (ma t/m zo)', 'stralend-team-monitor' ); ?></th>
 					</tr></thead>
 					<tbody>
+					<?php $daylabels = array( 'ma', 'di', 'wo', 'do', 'vr', 'za', 'zo' ); ?>
 					<?php foreach ( $employees as $i => $e ) : ?>
+						<?php $hours = isset( $e['hours'] ) && is_array( $e['hours'] ) ? $e['hours'] : array_fill( 0, 7, 0 ); ?>
 						<tr>
 							<td>
 								<input type="hidden" name="stm_emp[<?php echo (int) $i; ?>][id]" value="<?php echo esc_attr( $e['id'] ); ?>" />
@@ -239,6 +274,12 @@ class STM_Settings {
 							<td><input type="email" class="regular-text" name="stm_emp[<?php echo (int) $i; ?>][email]" value="<?php echo esc_attr( $e['email'] ); ?>" /></td>
 							<td><input type="text" size="5" name="stm_emp[<?php echo (int) $i; ?>][ext]" value="<?php echo esc_attr( $e['ext'] ); ?>" /></td>
 							<td><input type="text" size="12" name="stm_emp[<?php echo (int) $i; ?>][hubspot_owner_id]" value="<?php echo esc_attr( $e['hubspot_owner_id'] ); ?>" /></td>
+							<td class="stm-hours">
+								<?php for ( $d = 0; $d < 7; $d++ ) : ?>
+									<label title="<?php echo esc_attr( $daylabels[ $d ] ); ?>"><span><?php echo esc_html( $daylabels[ $d ] ); ?></span>
+									<input type="number" step="0.5" min="0" max="24" name="stm_emp[<?php echo (int) $i; ?>][hours][<?php echo (int) $d; ?>]" value="<?php echo esc_attr( $hours[ $d ] > 0 ? $hours[ $d ] : '' ); ?>" /></label>
+								<?php endfor; ?>
+							</td>
 						</tr>
 					<?php endforeach; ?>
 					</tbody>
@@ -254,7 +295,7 @@ class STM_Settings {
 								<em><?php esc_html_e( 'Ingesteld via wp-config.php (STM_HUBSPOT_TOKEN) — veiligste optie.', 'stralend-team-monitor' ); ?></em>
 							<?php else : ?>
 								<input type="password" class="regular-text" id="stm_hubspot_token" name="stm_hubspot_token" value="<?php echo esc_attr( self::hubspot_token() ); ?>" autocomplete="off" />
-								<p class="description"><?php esc_html_e( 'Scopes: sales-email-read, crm.objects.owners.read (+ tickets voor moeilijkheidsgraad). Nog veiliger: zet STM_HUBSPOT_TOKEN in wp-config.php.', 'stralend-team-monitor' ); ?></p>
+								<p class="description"><?php esc_html_e( 'Scopes: sales-email-read, crm.objects.owners.read, conversations.read (voor WhatsApp; + tickets voor moeilijkheidsgraad). Nog veiliger: zet STM_HUBSPOT_TOKEN in wp-config.php.', 'stralend-team-monitor' ); ?></p>
 							<?php endif; ?>
 						</td>
 					</tr>
@@ -296,11 +337,18 @@ class STM_Settings {
 				var tbody = document.querySelector( '#stm-emp-table tbody' );
 				var idx   = tbody.querySelectorAll( 'tr' ).length;
 				var tr    = document.createElement( 'tr' );
+				var days  = [ 'ma', 'di', 'wo', 'do', 'vr', 'za', 'zo' ];
+				var hours = '';
+				for ( var d = 0; d < 7; d++ ) {
+					hours += '<label title="' + days[ d ] + '"><span>' + days[ d ] + '</span>' +
+						'<input type="number" step="0.5" min="0" max="24" name="stm_emp[' + idx + '][hours][' + d + ']"></label>';
+				}
 				tr.innerHTML =
 					'<td><input type="hidden" name="stm_emp[' + idx + '][id]" value=""><input type="text" class="regular-text" name="stm_emp[' + idx + '][name]"></td>' +
 					'<td><input type="email" class="regular-text" name="stm_emp[' + idx + '][email]"></td>' +
 					'<td><input type="text" size="5" name="stm_emp[' + idx + '][ext]"></td>' +
-					'<td><input type="text" size="12" name="stm_emp[' + idx + '][hubspot_owner_id]"></td>';
+					'<td><input type="text" size="12" name="stm_emp[' + idx + '][hubspot_owner_id]"></td>' +
+					'<td class="stm-hours">' + hours + '</td>';
 				tbody.appendChild( tr );
 			} );
 		} )();

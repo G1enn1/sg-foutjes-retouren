@@ -27,9 +27,21 @@ class STM_Admin_Dashboard {
 		$this->guard( 'stm_sync_hubspot' );
 		list( $start, $end ) = $this->range_from_referer();
 		$result = ( new STM_HubSpot() )->sync_emails( $start, $end );
-		$this->redirect_with_notice( isset( $result['error'] )
-			? array( 'e' => $result['error'] )
-			: array( 'm' => sprintf( '%d e-mails opgehaald, %d nieuw opgeslagen.', $result['fetched'] ?? 0, $result['inserted'] ?? 0 ) ) );
+		$wa     = ( new STM_WhatsApp() )->sync( $start, $end );
+
+		if ( isset( $result['error'] ) ) {
+			$this->redirect_with_notice( array( 'e' => $result['error'] ) );
+		}
+		$msg = sprintf( '%d e-mails opgehaald, %d nieuw opgeslagen.', $result['fetched'] ?? 0, $result['inserted'] ?? 0 );
+		if ( isset( $wa['error'] ) ) {
+			$msg .= ' ' . sprintf( 'WhatsApp: %s', $wa['error'] );
+			if ( isset( $wa['hint'] ) ) {
+				$msg .= ' (' . $wa['hint'] . ')';
+			}
+		} else {
+			$msg .= ' ' . sprintf( 'WhatsApp: %d sessies, %d appjes, %d nieuw.', $wa['threads'] ?? 0, $wa['messages'] ?? 0, $wa['inserted'] ?? 0 );
+		}
+		$this->redirect_with_notice( array( 'm' => $msg ) );
 	}
 
 	public function action_sync_owners() {
@@ -47,11 +59,12 @@ class STM_Admin_Dashboard {
 		header( 'Content-Type: text/csv; charset=utf-8' );
 		header( 'Content-Disposition: attachment; filename="team-monitor-' . $start . '_' . $end . '.csv"' );
 		$out = fopen( 'php://output', 'w' );
-		fputcsv( $out, array( 'datum', 'medewerker', 'emails_verzonden', 'telefoontjes', 'belminuten',
-			'gem_belminuten', 'escalaties', 'fcr_ratio', 'gem_csat', 'tickets' ) );
+		fputcsv( $out, array( 'datum', 'medewerker', 'emails_verzonden', 'emails_ontvangen', 'appjes', 'app_sessies',
+			'telefoontjes', 'belminuten', 'gem_belminuten', 'escalaties', 'fcr_ratio', 'gem_csat', 'tickets' ) );
 		foreach ( $daily as $s ) {
 			fputcsv( $out, array(
-				$s['date'], $s['employee_name'], $s['emails_sent'], $s['calls_handled'],
+				$s['date'], $s['employee_name'], $s['emails_sent'], $s['emails_received'],
+				$s['wa_sent'] + $s['wa_received'], count( $s['wa_threads'] ), $s['calls_handled'],
 				STM_Metrics::call_minutes( $s ), STM_Metrics::avg_call_minutes( $s ),
 				$s['escalations'], STM_Metrics::fcr_rate( $s ), STM_Metrics::avg_csat( $s ), $s['ticket_count'],
 			) );
@@ -199,7 +212,7 @@ class STM_Admin_Dashboard {
 
 	private function render_summary( $totals ) {
 		echo '<table class="widefat striped stm-summary"><thead><tr>';
-		foreach ( array( 'Medewerker', 'Verzonden ✉', 'Ontvangen ✉', 'Telefoontjes', 'Belmin.', 'Gem/gesprek',
+		foreach ( array( 'Medewerker', 'Verzonden ✉', 'Ontvangen ✉', 'Appjes', 'App-sessies', 'Telefoontjes', 'Belmin.', 'Gem/gesprek',
 			'Zwaarte', 'Touches/ticket', 'Escalatie', 'FCR', 'CSAT' ) as $h ) {
 			echo '<th>' . esc_html( $h ) . '</th>';
 		}
@@ -211,6 +224,8 @@ class STM_Admin_Dashboard {
 			echo '<td class="stm-name">' . esc_html( $t['employee_name'] ) . '</td>';
 			echo '<td>' . (int) $t['emails_sent'] . '</td>';
 			echo '<td>' . (int) $t['emails_received'] . '</td>';
+			echo '<td>' . ( (int) $t['wa_sent'] + (int) $t['wa_received'] ) . '</td>';
+			echo '<td>' . count( $t['wa_threads'] ) . '</td>';
 			echo '<td>' . (int) $t['calls_handled'] . '</td>';
 			echo '<td>' . esc_html( STM_Metrics::call_minutes( $t ) ) . '</td>';
 			echo '<td>' . esc_html( STM_Metrics::avg_call_minutes( $t ) ) . '</td>';

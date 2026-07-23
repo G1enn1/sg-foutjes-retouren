@@ -52,7 +52,9 @@ class STM_Trends {
 		$sql  = "SELECT {$expr} AS b,
 			SUM(CASE WHEN channel='email' AND direction='outbound' THEN 1 ELSE 0 END) AS emails_sent,
 			SUM(CASE WHEN channel='call' THEN 1 ELSE 0 END) AS calls,
-			SUM(CASE WHEN channel='call' THEN duration_seconds ELSE 0 END) AS secs
+			SUM(CASE WHEN channel='call' THEN duration_seconds ELSE 0 END) AS secs,
+			SUM(CASE WHEN channel='whatsapp' THEN 1 ELSE 0 END) AS wa_msgs,
+			COUNT(DISTINCT CASE WHEN channel='whatsapp' THEN thread_id END) AS wa_sessions
 			FROM {$table} WHERE event_date BETWEEN %s AND %s";
 		$args = array( $from, $to );
 		if ( '' !== $employee_id ) {
@@ -68,14 +70,18 @@ class STM_Trends {
 			$by_key[ (string) $r['b'] ] = $r;
 		}
 
-		$out = array( 'labels' => array(), 'emails' => array(), 'calls' => array(), 'minutes' => array(), 'total' => array() );
+		$out = array( 'labels' => array(), 'emails' => array(), 'calls' => array(), 'minutes' => array(), 'wa_msgs' => array(), 'wa_sessions' => array(), 'total' => array() );
 		foreach ( $this->buckets( $from, $to, $bucket ) as $key => $label ) {
-			$r = isset( $by_key[ $key ] ) ? $by_key[ $key ] : array( 'emails_sent' => 0, 'calls' => 0, 'secs' => 0 );
-			$out['labels'][]  = $label;
-			$out['emails'][]  = (int) $r['emails_sent'];
-			$out['calls'][]   = (int) $r['calls'];
-			$out['minutes'][] = round( ( (int) $r['secs'] ) / 60, 1 );
-			$out['total'][]   = (int) $r['emails_sent'] + (int) $r['calls'];
+			$r = isset( $by_key[ $key ] ) ? $by_key[ $key ] : array( 'emails_sent' => 0, 'calls' => 0, 'secs' => 0, 'wa_msgs' => 0, 'wa_sessions' => 0 );
+			$out['labels'][]      = $label;
+			$out['emails'][]      = (int) $r['emails_sent'];
+			$out['calls'][]       = (int) $r['calls'];
+			$out['minutes'][]     = round( ( (int) $r['secs'] ) / 60, 1 );
+			$out['wa_msgs'][]     = (int) $r['wa_msgs'];
+			$out['wa_sessions'][] = (int) $r['wa_sessions'];
+			// One WhatsApp SESSION counts as one interaction (a session ≈ one
+			// email's worth of work); individual messages are detail.
+			$out['total'][] = (int) $r['emails_sent'] + (int) $r['calls'] + (int) $r['wa_sessions'];
 		}
 		return $out;
 	}
@@ -108,6 +114,8 @@ class STM_Trends {
 			SUM(CASE WHEN channel='email' AND direction='outbound' THEN 1 ELSE 0 END) AS emails_sent,
 			SUM(CASE WHEN channel='call' THEN 1 ELSE 0 END) AS calls,
 			SUM(CASE WHEN channel='call' THEN duration_seconds ELSE 0 END) AS secs,
+			SUM(CASE WHEN channel='whatsapp' THEN 1 ELSE 0 END) AS wa_msgs,
+			COUNT(DISTINCT CASE WHEN channel='whatsapp' THEN thread_id END) AS wa_sessions,
 			COUNT(DISTINCT event_date) AS active_days
 			FROM {$table} WHERE event_date BETWEEN %s AND %s";
 		$args  = array( $from, $to );
@@ -121,7 +129,9 @@ class STM_Trends {
 			'emails'      => (int) ( $r['emails_sent'] ?? 0 ),
 			'calls'       => (int) ( $r['calls'] ?? 0 ),
 			'minutes'     => round( ( (int) ( $r['secs'] ?? 0 ) ) / 60, 1 ),
-			'total'       => (int) ( $r['emails_sent'] ?? 0 ) + (int) ( $r['calls'] ?? 0 ),
+			'wa_msgs'     => (int) ( $r['wa_msgs'] ?? 0 ),
+			'wa_sessions' => (int) ( $r['wa_sessions'] ?? 0 ),
+			'total'       => (int) ( $r['emails_sent'] ?? 0 ) + (int) ( $r['calls'] ?? 0 ) + (int) ( $r['wa_sessions'] ?? 0 ),
 			'active_days' => (int) ( $r['active_days'] ?? 0 ),
 		);
 	}
@@ -364,11 +374,11 @@ class STM_Trends {
 		$d_year = self::pct_delta( $this_week['total'], $last_year['total'] );
 
 		echo '<div class="stm-tiles">';
-		$this->tile(
-			__( 'Deze week (t/m vandaag)', 'stralend-team-monitor' ),
-			number_format_i18n( $this_week['total'] ),
-			sprintf( '%s ✉ · %s ☎ · %s min', number_format_i18n( $this_week['emails'] ), number_format_i18n( $this_week['calls'] ), number_format_i18n( $this_week['minutes'] ) )
-		);
+		$sub = sprintf( '%s ✉ · %s ☎ · %s min', number_format_i18n( $this_week['emails'] ), number_format_i18n( $this_week['calls'] ), number_format_i18n( $this_week['minutes'] ) );
+		if ( $this_week['wa_sessions'] > 0 ) {
+			$sub .= sprintf( ' · %s app-sessies', number_format_i18n( $this_week['wa_sessions'] ) );
+		}
+		$this->tile( __( 'Deze week (t/m vandaag)', 'stralend-team-monitor' ), number_format_i18n( $this_week['total'] ), $sub );
 		$this->tile(
 			__( 'T.o.v. vorige week', 'stralend-team-monitor' ),
 			$this->delta_text( $d_week ),
@@ -685,11 +695,32 @@ class STM_Trends {
 		echo '<h2>' . esc_html( sprintf( __( 'Verloop per week — %s', 'stralend-team-monitor' ), $a_name ) ) . '</h2>';
 		$mix = '';
 		if ( $a_tot['total'] > 0 ) {
-			$mix = sprintf(
-				/* translators: 1: email share, 2: phone share */
-				__( ' Kanaalbalans: %1$d%% e-mail / %2$d%% telefoon.', 'stralend-team-monitor' ),
-				(int) round( $a_tot['emails'] / $a_tot['total'] * 100 ),
-				(int) round( $a_tot['calls'] / $a_tot['total'] * 100 )
+			if ( $a_tot['wa_sessions'] > 0 ) {
+				$mix = sprintf(
+					/* translators: 1: email share, 2: phone share, 3: whatsapp share, 4: whatsapp messages */
+					__( ' Kanaalbalans: %1$d%% e-mail / %2$d%% telefoon / %3$d%% WhatsApp-sessies (%4$s appjes).', 'stralend-team-monitor' ),
+					(int) round( $a_tot['emails'] / $a_tot['total'] * 100 ),
+					(int) round( $a_tot['calls'] / $a_tot['total'] * 100 ),
+					(int) round( $a_tot['wa_sessions'] / $a_tot['total'] * 100 ),
+					number_format_i18n( $a_tot['wa_msgs'] )
+				);
+			} else {
+				$mix = sprintf(
+					/* translators: 1: email share, 2: phone share */
+					__( ' Kanaalbalans: %1$d%% e-mail / %2$d%% telefoon.', 'stralend-team-monitor' ),
+					(int) round( $a_tot['emails'] / $a_tot['total'] * 100 ),
+					(int) round( $a_tot['calls'] / $a_tot['total'] * 100 )
+				);
+			}
+		}
+		$rooster = '';
+		$sched   = STM_Settings::scheduled_hours( $emp, $from, $to );
+		if ( $sched > 0 && $a_tot['total'] > 0 ) {
+			$rooster = sprintf(
+				/* translators: 1: interactions per scheduled hour, 2: scheduled hours */
+				__( ' Per gewerkt uur (rooster): %1$s interacties (%2$s roosteruren in deze periode).', 'stralend-team-monitor' ),
+				number_format_i18n( round( $a_tot['total'] / $sched, 1 ), 1 ),
+				number_format_i18n( $sched )
 			);
 		}
 		echo '<p class="description">' . esc_html( sprintf(
@@ -699,13 +730,16 @@ class STM_Trends {
 			number_format_i18n( $a_tot['minutes'] ),
 			$a_tot['active_days'] ? number_format_i18n( round( $a_tot['total'] / $a_tot['active_days'], 1 ) ) : '0',
 			$a_tot['active_days']
-		) . $mix ) . '</p>';
+		) . $rooster . $mix ) . '</p>';
 
 		$metrics = array(
 			'emails'  => __( 'E-mails verzonden', 'stralend-team-monitor' ),
 			'calls'   => __( 'Telefoontjes', 'stralend-team-monitor' ),
 			'minutes' => __( 'Belminuten', 'stralend-team-monitor' ),
 		);
+		if ( array_sum( $a['wa_sessions'] ) > 0 || ( $b && array_sum( $b['wa_sessions'] ) > 0 ) ) {
+			$metrics['wa_sessions'] = __( 'WhatsApp-sessies', 'stralend-team-monitor' );
+		}
 
 		$legend_series = array( array( 'label' => $a_name, 'color' => self::C_A ) );
 		if ( $b ) {

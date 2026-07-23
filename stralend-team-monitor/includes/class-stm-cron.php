@@ -23,9 +23,11 @@ class STM_Cron {
 		$start = gmdate( 'Y-m-d', strtotime( $end . ' -3 days' ) );
 
 		$result = ( new STM_HubSpot() )->sync_emails( $start, $end );
+		$wa     = ( new STM_WhatsApp() )->sync( $start, $end );
 		update_option( 'stm_last_sync', array(
 			'time'   => current_time( 'mysql' ),
 			'result' => $result,
+			'wa'     => $wa,
 		) );
 	}
 }
